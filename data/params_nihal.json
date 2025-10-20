@@ -1,10 +1,14 @@
 {
-  "lower_rate_limit": 60,
-  "upper_rate_limit": 120,
+  "lower_rate_limit": 60.0,
+  "upper_rate_limit": 120.0,
   "atrial_amplitude": 3.5,
   "atrial_pulse_width": 0.4,
   "ventricular_amplitude": 3.5,
   "ventricular_pulse_width": 0.4,
-  "vrp": 320,
-  "arp": 250
+  "vrp": 320.0,
+  "arp": 250,
+  "ventricular_sensitivity": 2.5,
+  "hysteresis": 60.0,
+  "rate_smoothing": 0.0,
+  "mode": "VVI"
 }

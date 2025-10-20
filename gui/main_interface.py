@@ -142,14 +142,20 @@ class DCMMainInterface:
         control_frame = ttk.LabelFrame(parent, text="Device Controls", padding="10")
         control_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 5))
         
-        ttk.Button(control_frame, text="Connect to Device", command=self.connect_device).pack(fill=tk.X, pady=5)
-        ttk.Button(control_frame, text="Disconnect", command=self.disconnect_device).pack(fill=tk.X, pady=5)
+        ttk.Label(control_frame, text="Connection:", font=("Arial", 9, "bold")).pack(pady=(5,2))
+        ttk.Button(control_frame, text="Connect to Device", command=self.connect_device).pack(fill=tk.X, pady=2)
+        ttk.Button(control_frame, text="Disconnect", command=self.disconnect_device).pack(fill=tk.X, pady=2)
         
         ttk.Separator(control_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         
-        ttk.Button(control_frame, text="Interrogate Device", command=self.interrogate_device).pack(fill=tk.X, pady=5)
-        ttk.Button(control_frame, text="Program Parameters", command=self.program_parameters).pack(fill=tk.X, pady=5)
-        ttk.Button(control_frame, text="Reset to Nominal", command=self.reset_to_nominal).pack(fill=tk.X, pady=5)
+        ttk.Label(control_frame, text="Device Operations:", font=("Arial", 9, "bold")).pack(pady=(5,2))
+        ttk.Button(control_frame, text="Interrogate Device", command=self.interrogate_device).pack(fill=tk.X, pady=2)
+        ttk.Button(control_frame, text="Program Parameters", command=self.program_parameters).pack(fill=tk.X, pady=2)
+        
+        ttk.Separator(control_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        
+        ttk.Label(control_frame, text="Parameter Utilities:", font=("Arial", 9, "bold")).pack(pady=(5,2))
+        ttk.Button(control_frame, text="Reset to Nominal", command=self.reset_to_nominal).pack(fill=tk.X, pady=2)
         
         ttk.Separator(control_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         
@@ -294,8 +300,9 @@ class DCMMainInterface:
         button_frame = ttk.Frame(parent)
         button_frame.grid(row=3, column=0, columnspan=2, pady=(10, 0))
         
-        ttk.Button(button_frame, text="Apply Changes", command=self.apply_changes).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Save Parameters", command=self.save_parameters).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Save Parameters", command=self.save_parameters, 
+                   style="Accent.TButton").pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Revert Changes", command=self.revert_changes).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Logout", command=self.logout).pack(side=tk.LEFT, padx=5)
     
     # Device control methods
@@ -385,35 +392,39 @@ class DCMMainInterface:
                                "Cannot program parameters:\n\n" + "\n".join(errors))
             return
         
-        if messagebox.askyesno("Program", "Program these parameters to the device?"):
-            messagebox.showinfo("Success", "Parameters programmed successfully")
+        if messagebox.askyesno("Program Device", 
+                              f"Program these {self.current_mode} parameters to the connected device?\n\n"
+                              "This will update the pacemaker settings."):
+            # In Deliverable 2, this would send parameters via serial communication
+            # For now, just simulate success
+            messagebox.showinfo("Success", 
+                              f"Parameters programmed successfully to device:\n{self.connected_device}\n\n"
+                              "Mode: " + self.current_mode)
+            
+            # Auto-save to DCM after successful programming (good practice)
+            self.save_parameters_silent()
     
     def reset_to_nominal(self):
         # Reset parameters to nominal values for current mode
-        for param_key in self.parameter_entries.keys():
-            nominal_value = self.get_nominal_value(param_key)
-            self.parameter_entries[param_key].delete(0, tk.END)
-            self.parameter_entries[param_key].insert(0, str(nominal_value))
-        messagebox.showinfo("Reset", f"Parameters reset to nominal values for {self.current_mode} mode")
+        if messagebox.askyesno("Reset to Nominal", 
+                              f"Reset all {self.current_mode} parameters to nominal values?"):
+            for param_key in self.parameter_entries.keys():
+                nominal_value = self.get_nominal_value(param_key)
+                self.parameter_entries[param_key].delete(0, tk.END)
+                self.parameter_entries[param_key].insert(0, str(nominal_value))
+            messagebox.showinfo("Reset", f"Parameters reset to nominal values for {self.current_mode} mode")
     
-    def apply_changes(self):
-        # Apply parameter changes with validation
-        errors = self.validate_all_parameters()
-        
-        if errors:
-            messagebox.showerror("Validation Error", 
-                               "Cannot apply changes:\n\n" + "\n".join(errors))
-            return
-        
-        try:
-            for key, entry in self.parameter_entries.items():
-                self.current_parameters[key] = float(entry.get())
-            messagebox.showinfo("Applied", "Parameters updated successfully")
-        except ValueError:
-            messagebox.showerror("Error", "Invalid parameter value")
+    def revert_changes(self):
+        # Revert parameters to last saved values
+        if messagebox.askyesno("Revert Changes", "Discard all unsaved changes?"):
+            for param_key, entry in self.parameter_entries.items():
+                saved_value = self.current_parameters.get(param_key, self.get_nominal_value(param_key))
+                entry.delete(0, tk.END)
+                entry.insert(0, str(saved_value))
+            messagebox.showinfo("Reverted", "Parameters restored to last saved values")
     
     def save_parameters(self):
-        # Save parameters to file with validation
+        # Save parameters to DCM local storage
         errors = self.validate_all_parameters()
         
         if errors:
@@ -434,7 +445,18 @@ class DCMMainInterface:
         
         # Save to file
         self.save_user_parameters()
-        messagebox.showinfo("Saved", "Parameters saved successfully")
+        messagebox.showinfo("Saved", f"Parameters saved to DCM storage for user: {self.username}")
+    
+    def save_parameters_silent(self):
+        # Save parameters without showing success message (used after programming)
+        for key, entry in self.parameter_entries.items():
+            try:
+                self.current_parameters[key] = float(entry.get())
+            except ValueError:
+                return
+        
+        self.current_parameters['mode'] = self.current_mode
+        self.save_user_parameters()
     
     def logout(self):
         # Logout and return to login

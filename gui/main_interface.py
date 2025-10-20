@@ -6,19 +6,66 @@ import os
 from datetime import datetime
 
 class DCMMainInterface:
+    # Define parameter ranges for validation
+    PARAMETER_RANGES = {
+        "lower_rate_limit": (30, 175),
+        "upper_rate_limit": (50, 175),
+        "atrial_amplitude": (0.0, 7.0),
+        "atrial_pulse_width": (0.05, 1.9),
+        "ventricular_amplitude": (0.0, 7.0),
+        "ventricular_pulse_width": (0.05, 1.9),
+        "vrp": (150, 500),
+        "arp": (150, 500),
+        "pvarp": (150, 500),
+        "hysteresis": (30, 175),
+        "rate_smoothing": (0, 25),
+        "atrial_sensitivity": (0.0, 10.0),
+        "ventricular_sensitivity": (0.0, 10.0),
+    }
+    
+    # Define mode-specific parameters
+    MODE_PARAMETERS = {
+        "AOO": ["lower_rate_limit", "upper_rate_limit", "atrial_amplitude", "atrial_pulse_width"],
+        "VOO": ["lower_rate_limit", "upper_rate_limit", "ventricular_amplitude", "ventricular_pulse_width"],
+        "AAI": ["lower_rate_limit", "upper_rate_limit", "atrial_amplitude", "atrial_pulse_width",
+                "atrial_sensitivity", "arp", "pvarp", "hysteresis", "rate_smoothing"],
+        "VVI": ["lower_rate_limit", "upper_rate_limit", "ventricular_amplitude", "ventricular_pulse_width",
+                "ventricular_sensitivity", "vrp", "hysteresis", "rate_smoothing"],
+    }
+    
+    # Parameter display names
+    PARAMETER_LABELS = {
+        "lower_rate_limit": ("Lower Rate Limit (ppm)", "ppm"),
+        "upper_rate_limit": ("Upper Rate Limit (ppm)", "ppm"),
+        "atrial_amplitude": ("Atrial Amplitude (V)", "V"),
+        "atrial_pulse_width": ("Atrial Pulse Width (ms)", "ms"),
+        "ventricular_amplitude": ("Ventricular Amplitude (V)", "V"),
+        "ventricular_pulse_width": ("Ventricular Pulse Width (ms)", "ms"),
+        "vrp": ("VRP (ms)", "ms"),
+        "arp": ("ARP (ms)", "ms"),
+        "pvarp": ("PVARP (ms)", "ms"),
+        "hysteresis": ("Hysteresis (ppm)", "ppm"),
+        "rate_smoothing": ("Rate Smoothing (%)", "%"),
+        "atrial_sensitivity": ("Atrial Sensitivity (mV)", "mV"),
+        "ventricular_sensitivity": ("Ventricular Sensitivity (mV)", "mV"),
+    }
+    
     def __init__(self, root, username):
         self.root = root
         self.username = username
         self.root.title(f"PACEMAKER DCM - User: {username}")
         self.root.geometry("900x700")
         
-        # Get base directory (same as your auth.py logic)
+        # Get base directory
         self.BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
         # Simulated device connection state
         self.connected_device = None
         self.connection_status = "Disconnected"
         self.last_device = None
+        
+        # Initialize current mode
+        self.current_mode = "VVI"
         
         # Initialize parameters
         self.current_parameters = self.load_user_parameters()
@@ -34,16 +81,17 @@ class DCMMainInterface:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(1, weight=1)
+        main_frame.rowconfigure(2, weight=1)
         
         # Create all interface components
         self.create_status_bar(main_frame)
+        self.create_mode_selector(main_frame)
         self.create_control_panel(main_frame)
         self.create_parameter_display(main_frame)
         self.create_action_buttons(main_frame)
     
     def create_status_bar(self, parent):
-        """Status bar showing connection and telemetry status (Req 4,5,6,7)"""
+        # Status bar showing connection and telemetry status (Req 4,5,6,7)
         status_frame = ttk.LabelFrame(parent, text="System Status", padding="5")
         status_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
         
@@ -70,10 +118,29 @@ class DCMMainInterface:
         self.device_warning = ttk.Label(status_frame, text="", foreground="orange", font=("Arial", 9, "bold"))
         self.device_warning.grid(row=0, column=8, padx=10)
     
+    def create_mode_selector(self, parent):
+        # Mode selection dropdown
+        mode_frame = ttk.LabelFrame(parent, text="Pacing Mode Selection", padding="5")
+        mode_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(mode_frame, text="Mode:").grid(row=0, column=0, padx=5)
+        
+        self.mode_var = tk.StringVar(value=self.current_mode)
+        mode_dropdown = ttk.Combobox(mode_frame, textvariable=self.mode_var, 
+                                      values=list(self.MODE_PARAMETERS.keys()),
+                                      state="readonly", width=15)
+        mode_dropdown.grid(row=0, column=1, padx=5)
+        mode_dropdown.bind("<<ComboboxSelected>>", self.on_mode_change)
+        
+        ttk.Label(mode_frame, text="Current Mode:", font=("Arial", 10, "bold")).grid(row=0, column=2, padx=(20, 5))
+        self.current_mode_label = ttk.Label(mode_frame, text=self.current_mode, 
+                                           font=("Arial", 10, "bold"), foreground="blue")
+        self.current_mode_label.grid(row=0, column=3, padx=5)
+    
     def create_control_panel(self, parent):
         # Control buttons panel (Requirement 2)
         control_frame = ttk.LabelFrame(parent, text="Device Controls", padding="10")
-        control_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 5))
+        control_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 5))
         
         ttk.Button(control_frame, text="Connect to Device", command=self.connect_device).pack(fill=tk.X, pady=5)
         ttk.Button(control_frame, text="Disconnect", command=self.disconnect_device).pack(fill=tk.X, pady=5)
@@ -98,53 +165,134 @@ class DCMMainInterface:
                    command=self.restore_telemetry).pack(fill=tk.X, pady=2)
     
     def create_parameter_display(self, parent):
-        """Parameter display area (Requirement 3)"""
+        # Parameter display area (Requirement 3)
         param_frame = ttk.LabelFrame(parent, text="Programmable Parameters", padding="10")
-        param_frame.grid(row=1, column=1, sticky=(tk.W, tk.E, tk.N, tk.S))
+        param_frame.grid(row=2, column=1, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # Create scrollable canvas
         canvas = tk.Canvas(param_frame, highlightthickness=0)
         scrollbar = ttk.Scrollbar(param_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
+        self.scrollable_frame = ttk.Frame(canvas)
         
-        scrollable_frame.bind("<Configure>", 
+        self.scrollable_frame.bind("<Configure>", 
                              lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        
-        self.parameter_entries = {}
-        
-        # Parameters from deliverable spec
-        parameters = [
-            ("Lower Rate Limit (ppm)", "lower_rate_limit", 30, 175, 60),
-            ("Upper Rate Limit (ppm)", "upper_rate_limit", 50, 175, 120),
-            ("Atrial Amplitude (V)", "atrial_amplitude", 0.0, 7.0, 3.5),
-            ("Atrial Pulse Width (ms)", "atrial_pulse_width", 0.05, 1.9, 0.4),
-            ("Ventricular Amplitude (V)", "ventricular_amplitude", 0.0, 7.0, 3.5),
-            ("Ventricular Pulse Width (ms)", "ventricular_pulse_width", 0.05, 1.9, 0.4),
-            ("VRP (ms)", "vrp", 150, 500, 320),
-            ("ARP (ms)", "arp", 150, 500, 250),
-        ]
-        
-        for row, (label, key, min_val, max_val, default) in enumerate(parameters):
-            ttk.Label(scrollable_frame, text=label).grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
-            
-            entry = ttk.Entry(scrollable_frame, width=15)
-            entry.grid(row=row, column=1, padx=5, pady=5)
-            entry.insert(0, str(self.current_parameters.get(key, default)))
-            self.parameter_entries[key] = entry
-            
-            ttk.Label(scrollable_frame, text=f"[{min_val}-{max_val}]", foreground="gray").grid(
-                row=row, column=2, sticky=tk.W, padx=5, pady=5)
         
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+        
+        self.parameter_entries = {}
+        self.parameter_widgets = {}
+        
+        # Display parameters for current mode
+        self.display_mode_parameters()
+    
+    def display_mode_parameters(self):
+        # Display only parameters relevant to the current mode
+        # Clear existing widgets
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+        
+        self.parameter_entries.clear()
+        self.parameter_widgets.clear()
+        
+        # Get parameters for current mode
+        mode_params = self.MODE_PARAMETERS.get(self.current_mode, [])
+        
+        # Display each parameter
+        for row, param_key in enumerate(mode_params):
+            if param_key not in self.PARAMETER_LABELS:
+                continue
+                
+            label_text, unit = self.PARAMETER_LABELS[param_key]
+            min_val, max_val = self.PARAMETER_RANGES[param_key]
+            
+            # Create label
+            label = ttk.Label(self.scrollable_frame, text=label_text)
+            label.grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
+            
+            # Create entry
+            entry = ttk.Entry(self.scrollable_frame, width=15)
+            entry.grid(row=row, column=1, padx=5, pady=5)
+            
+            # Get default value
+            default_value = self.current_parameters.get(param_key, self.get_nominal_value(param_key))
+            entry.insert(0, str(default_value))
+            
+            self.parameter_entries[param_key] = entry
+            
+            # Create range label
+            range_label = ttk.Label(self.scrollable_frame, text=f"[{min_val}-{max_val}]", 
+                                   foreground="gray")
+            range_label.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+            
+            # Store widgets for future reference
+            self.parameter_widgets[param_key] = {
+                'label': label,
+                'entry': entry,
+                'range': range_label
+            }
+    
+    def get_nominal_value(self, param_key):
+        # Get nominal/default value for a parameter
+        nominal_values = {
+            "lower_rate_limit": 60,
+            "upper_rate_limit": 120,
+            "atrial_amplitude": 3.5,
+            "atrial_pulse_width": 0.4,
+            "ventricular_amplitude": 3.5,
+            "ventricular_pulse_width": 0.4,
+            "vrp": 320,
+            "arp": 250,
+            "pvarp": 250,
+            "hysteresis": 60,
+            "rate_smoothing": 0,
+            "atrial_sensitivity": 0.75,
+            "ventricular_sensitivity": 2.5,
+        }
+        return nominal_values.get(param_key, 0)
+    
+    def on_mode_change(self, event=None):
+        # Handle mode change event
+        new_mode = self.mode_var.get()
+        if new_mode != self.current_mode:
+            self.current_mode = new_mode
+            self.current_mode_label.config(text=self.current_mode)
+            self.display_mode_parameters()
+            messagebox.showinfo("Mode Changed", f"Switched to {self.current_mode} mode")
+    
+    def validate_parameter(self, param_key, value):
+        # Validate a parameter value against its allowed range
+        try:
+            num_value = float(value)
+            min_val, max_val = self.PARAMETER_RANGES[param_key]
+            
+            if num_value < min_val or num_value > max_val:
+                return False, f"{self.PARAMETER_LABELS[param_key][0]} must be between {min_val} and {max_val}"
+            
+            return True, ""
+        except ValueError:
+            return False, f"{self.PARAMETER_LABELS[param_key][0]} must be a valid number"
+    
+    def validate_all_parameters(self):
+        # Validate all current parameter values
+        errors = []
+        
+        for param_key, entry in self.parameter_entries.items():
+            value = entry.get()
+            is_valid, error_msg = self.validate_parameter(param_key, value)
+            
+            if not is_valid:
+                errors.append(error_msg)
+        
+        return errors
     
     def create_action_buttons(self, parent):
         # Bottom action buttons
         button_frame = ttk.Frame(parent)
-        button_frame.grid(row=2, column=0, columnspan=2, pady=(10, 0))
+        button_frame.grid(row=3, column=0, columnspan=2, pady=(10, 0))
         
         ttk.Button(button_frame, text="Apply Changes", command=self.apply_changes).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Save Parameters", command=self.save_parameters).pack(side=tk.LEFT, padx=5)
@@ -229,33 +377,62 @@ class DCMMainInterface:
         if self.connection_status != "Connected":
             messagebox.showwarning("Warning", "Please connect to a device first")
             return
+        
+        # Validate parameters before programming
+        errors = self.validate_all_parameters()
+        if errors:
+            messagebox.showerror("Validation Error", 
+                               "Cannot program parameters:\n\n" + "\n".join(errors))
+            return
+        
         if messagebox.askyesno("Program", "Program these parameters to the device?"):
             messagebox.showinfo("Success", "Parameters programmed successfully")
     
     def reset_to_nominal(self):
-        # Reset parameters to nominal values
-        nominal = {
-            "lower_rate_limit": 60, "upper_rate_limit": 120,
-            "atrial_amplitude": 3.5, "atrial_pulse_width": 0.4,
-            "ventricular_amplitude": 3.5, "ventricular_pulse_width": 0.4,
-            "vrp": 320, "arp": 250
-        }
-        for key, value in nominal.items():
-            self.parameter_entries[key].delete(0, tk.END)
-            self.parameter_entries[key].insert(0, str(value))
-        messagebox.showinfo("Reset", "Parameters reset to nominal values")
+        # Reset parameters to nominal values for current mode
+        for param_key in self.parameter_entries.keys():
+            nominal_value = self.get_nominal_value(param_key)
+            self.parameter_entries[param_key].delete(0, tk.END)
+            self.parameter_entries[param_key].insert(0, str(nominal_value))
+        messagebox.showinfo("Reset", f"Parameters reset to nominal values for {self.current_mode} mode")
     
     def apply_changes(self):
-        # Apply parameter changes
+        # Apply parameter changes with validation
+        errors = self.validate_all_parameters()
+        
+        if errors:
+            messagebox.showerror("Validation Error", 
+                               "Cannot apply changes:\n\n" + "\n".join(errors))
+            return
+        
         try:
             for key, entry in self.parameter_entries.items():
                 self.current_parameters[key] = float(entry.get())
-            messagebox.showinfo("Applied", "Parameters updated")
+            messagebox.showinfo("Applied", "Parameters updated successfully")
         except ValueError:
             messagebox.showerror("Error", "Invalid parameter value")
     
     def save_parameters(self):
-        # Save parameters to file
+        # Save parameters to file with validation
+        errors = self.validate_all_parameters()
+        
+        if errors:
+            messagebox.showerror("Validation Error", 
+                               "Cannot save parameters:\n\n" + "\n".join(errors))
+            return
+        
+        # Update current parameters
+        for key, entry in self.parameter_entries.items():
+            try:
+                self.current_parameters[key] = float(entry.get())
+            except ValueError:
+                messagebox.showerror("Error", f"Invalid value for {key}")
+                return
+        
+        # Save current mode
+        self.current_parameters['mode'] = self.current_mode
+        
+        # Save to file
         self.save_user_parameters()
         messagebox.showinfo("Saved", "Parameters saved successfully")
     
@@ -274,13 +451,28 @@ class DCMMainInterface:
         param_file = os.path.join(self.BASE_DIR, f"data/params_{self.username}.json")
         try:
             with open(param_file, 'r') as f:
-                return json.load(f)
+                params = json.load(f)
+                # Load saved mode if available
+                if 'mode' in params:
+                    self.current_mode = params['mode']
+                return params
         except FileNotFoundError:
+            # Return default parameters
             return {
-                "lower_rate_limit": 60, "upper_rate_limit": 120,
-                "atrial_amplitude": 3.5, "atrial_pulse_width": 0.4,
-                "ventricular_amplitude": 3.5, "ventricular_pulse_width": 0.4,
-                "vrp": 320, "arp": 250
+                "lower_rate_limit": 60,
+                "upper_rate_limit": 120,
+                "atrial_amplitude": 3.5,
+                "atrial_pulse_width": 0.4,
+                "ventricular_amplitude": 3.5,
+                "ventricular_pulse_width": 0.4,
+                "vrp": 320,
+                "arp": 250,
+                "pvarp": 250,
+                "hysteresis": 60,
+                "rate_smoothing": 0,
+                "atrial_sensitivity": 0.75,
+                "ventricular_sensitivity": 2.5,
+                "mode": "VVI"
             }
     
     def save_user_parameters(self):

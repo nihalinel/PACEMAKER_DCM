@@ -14,7 +14,7 @@ MAX_USERS = 10
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Determine database file directory
-DB_FILE = os.path.join(BASE_DIR, "users.db")
+DB_FILE = os.path.join(BASE_DIR, "data", "users.db")
 
 # Create users database table if doesn't already exists
 def init_db():  

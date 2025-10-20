@@ -1,0 +1,10 @@
+{
+  "lower_rate_limit": 60,
+  "upper_rate_limit": 120,
+  "atrial_amplitude": 3.5,
+  "atrial_pulse_width": 0.4,
+  "ventricular_amplitude": 3.5,
+  "ventricular_pulse_width": 0.4,
+  "vrp": 320,
+  "arp": 250
+}

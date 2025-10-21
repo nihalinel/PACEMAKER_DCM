@@ -221,7 +221,7 @@ def lead_waveform_init(patientID, DCM_FILE):
     # Set modification date/time
     ds.ContentDate = dt.strftime("%Y%m%d") # format YYYYMMDD
     ds.ContentTime = dt.strftime("%H%M%S") # format   HHMMSS
-    ds.AcquisitionDateTime = f"{ds.ContentDate} {ds.ContentTime}"
+    ds.AcquisitionDateTime = f"{ds.ContentDate}{ds.ContentTime}"
 
     # Set shared default information
     ds.PatientName = "Test^Firstname"
@@ -259,7 +259,8 @@ def lead_waveform_init(patientID, DCM_FILE):
         ch.ChannelSensitivityUnitsSequence = [Dataset()]
         ch.ChannelSensitivityUnitsSequence[0].CodeValue = "V"
         ch.ChannelSensitivityUnitsSequence[0].CodingSchemeDesignator = "UCUM"
-        ch.ChannelSensitivityUnitsSequence[0].CodeMeaning = "volt"
+        ch.ChannelSensitivityUnitsSequence[0].CodeMeaning = "millivolt"
+        ch.ChannelBaseline = 0
 
         seq.ChannelDefinitionSequence.append(ch)
 
@@ -292,8 +293,8 @@ def surface_ecg_init(patientID, DCM_FILE):
     dt = datetime.datetime.now(tzlocal.get_localzone())
     # Set modification date/time
     ds.ContentDate = dt.strftime("%Y%m%d") # format YYYYMMDD
-    ds.ContentTime = dt.strftime("%H%M%S") # format H
-    ds.AcquisitionDateTime = f"{ds.ContentDate} {ds.ContentTime}"
+    ds.ContentTime = dt.strftime("%H%M%S") # format HHMMSS
+    ds.AcquisitionDateTime = f"{ds.ContentDate}{ds.ContentTime}"
 
     # Set shared default information
     ds.PatientName = "Test^Firstname"
@@ -306,7 +307,7 @@ def surface_ecg_init(patientID, DCM_FILE):
 
     # Multiplex group for all 12 channels
     ecg_seq = Dataset()
-    ecg_seq.MultiplexGroupLabel = "Surface ECG"
+    ecg_seq.MultiplexGroupLabel = "Surface Lead"
     ecg_seq.NumberOfWaveformChannels = len(ecg_leads)
     ecg_seq.NumberOfWaveformSamples = 0
     ecg_seq.SamplingFrequency = 500.0
@@ -329,9 +330,10 @@ def surface_ecg_init(patientID, DCM_FILE):
         ch.ChannelSourceSequence[0].CodeMeaning = f"Lead {lead_name}"
         ch.ChannelSensitivity = 1.0 # µV per bit (placeholder; changes based on ACD) (0.1526 for 16-bit ADC, 2.44 for 12-bit ADC)
         ch.ChannelSensitivityUnitsSequence = [Dataset()]
-        ch.ChannelSensitivityUnitsSequence[0].CodeValue = "uV"
+        ch.ChannelSensitivityUnitsSequence[0].CodeValue = "mV"
         ch.ChannelSensitivityUnitsSequence[0].CodingSchemeDesignator = "UCUM"
-        ch.ChannelSensitivityUnitsSequence[0].CodeMeaning = "microvolt"
+        ch.ChannelSensitivityUnitsSequence[0].CodeMeaning = "millivolt"
+        ch.ChannelBaseline = 0
         ecg_seq.ChannelDefinitionSequence.append(ch)
 
     ds.WaveformSequence = [ecg_seq]
@@ -345,9 +347,3 @@ def surface_ecg_init(patientID, DCM_FILE):
     ds.file_meta = file_meta
 
     ds.save_as(DCM_FILE, enforce_file_format=True)
-
-# def save_dicom(ds, filepath):
-#     dt = datetime.datetime.now()
-#     ds.InstanceCreationDate = dt.strftime("%Y%m%d")
-#     ds.InstanceCreationTime = dt.strftime("%H%M%S")
-#     ds.save_as(filepath)

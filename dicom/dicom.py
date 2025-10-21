@@ -1,4 +1,6 @@
 import os
+import datetime
+import tzlocal
 
 from pydicom import dcmread
 
@@ -32,6 +34,21 @@ def init_dir(username, patientID):
         
     return paths
 
+def save_dicom(ds, filepath):
+    dt = datetime.datetime.now(tzlocal.get_localzone())
+
+    if ds.Modality == "SR":
+        ds.InstanceCreationDate = dt.strftime("%Y%m%d")
+        ds.InstanceCreationTime = dt.strftime("%H%M%S")
+
+    elif ds.Modality == "ECG":
+        ds.AcquisitionDateTime = f"{dt.strftime("%Y%m%d")}{dt.strftime("%H%M%S")}"
+
+    else:
+        raise ValueError("File is neither Basic Test SR nor ECG Waveform")
+
+    ds.save_as(filepath)
+
 # Fetch the parameter value of a specified mode and file
 def get_parameter(filepath, mode, parameter, unit_flag=False):
     ds = dcmread(filepath)
@@ -60,11 +77,11 @@ def get_parameter(filepath, mode, parameter, unit_flag=False):
                             return value
                     # in case it doesn't exsist, is empty or the DICOM tag is missing
                     except (AttributeError, IndexError, KeyError):
-                        return 0.0
-    return 0.0
+                        return None
+    return None
 
 # Write the parameter with a new value of a specified mode and file
-def set_parameter(filepath, mode, parameter, value):
+def set_parameter(filepath, mode, parameter, value, save=True):
     ds = dcmread(filepath)
 
     # validation
@@ -84,11 +101,67 @@ def set_parameter(filepath, mode, parameter, value):
                     # updates numeric value
                     try:
                         subitem.MeasuredValueSequence[0].NumericValue = float(value)
-                        ds.save_as(filepath)
+                        if save:
+                            save_dicom(ds, filepath)
                         return True
                     # in case it doesn't exsist, is empty or the DICOM tag is missing
-                    except (AttributeError, IndexError, KeyError):
-                        raise("Numberic Value tag missing or invalid structure")
+                    except (AttributeError):
+                        raise ValueError("Numberic Value tag missing or invalid structure")
     
     # if we get here, parameter or mode wasn't found
     raise ValueError(f"Parameter '{parameter}' not found under mode '{mode}'")
+
+# Fetch the value of a waveform parameter a specified lead and file
+def get_waveparam(filepath, label, parameter):
+    ds = dcmread(filepath)
+
+    # validation
+    if ds.Modality != "ECG":
+        raise TypeError("File is not an ECG Waveform")
+    
+    # traverse leads
+    for item in ds.WaveformSequence:
+        if item.MultiplexGroupLabel == f"{label} Lead":
+
+            # returns attribute if exists
+            if hasattr(item, parameter):
+                return getattr(item, parameter)
+            else:
+                for ch in item.ChannelDefinitionSequence:
+                    if hasattr(ch, parameter):
+                        return getattr(ch, parameter)
+                else:
+                    raise AttributeError(f"Parameter '{parameter}' not found in '{label}' lead.")
+            
+    return ValueError(f"Lead '{label}' not found in WaveformSequence.")
+
+# Write the value of a waveform parameter a specified lead and file
+def set_waveparam(filepath, label, parameter, value, save=True):
+    ds = dcmread(filepath)
+
+    # validation
+    if ds.Modality != "ECG":
+        raise TypeError("File is not an ECG Waveform")
+    
+    # traverse leads
+    for item in ds.WaveformSequence:
+        if item.MultiplexGroupLabel == f"{label} Lead":
+
+            # returns attribute if exists
+            if hasattr(item, parameter):
+                setattr(item, parameter, value)
+                if save:
+                    save_dicom(ds, filepath)
+                return True
+            else:
+                for ch in item.ChannelDefinitionSequence:
+                    if hasattr(ch, parameter):
+                        setattr(ch, parameter, value)
+                        if save:
+                            save_dicom(ds, filepath)
+                        return True
+                    else:
+                        raise AttributeError(f"Parameter '{parameter}' not found in '{label}' lead.")
+            
+    # if we get here, parameter or lead wasn't found
+    raise ValueError(f"Lead '{label}' not found in WaveformSequence.")

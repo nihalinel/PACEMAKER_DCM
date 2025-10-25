@@ -18,6 +18,10 @@ __pycache__/
 *.sqlite3
 data/users.db
 
+# DICOM
+*.dcm
+data/test_user/
+
 # Distribution / packaging
 build/
 dist/

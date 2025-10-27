@@ -43,7 +43,7 @@ for i, label in enumerate(lead_labels):
     print(f"NumberOfWaveformSamples {get_waveparam(ecg_path, label, "NumberOfWaveformSamples")}")
     print(f"ChannelSensitivity: {get_waveparam(ecg_path, label, "ChannelSensitivity")}")
     print(f"ChannelBaseline: {get_waveparam(ecg_path, label, "ChannelBaseline")}")
-    
+            
     set_waveparam(ecg_path, label, "SamplingFrequency", float(fs))
     set_waveparam(ecg_path, label, "WaveformBitsAllocated", 16)
 

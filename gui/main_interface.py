@@ -4,73 +4,118 @@ from tkinter import ttk, messagebox
 import json
 import os
 from datetime import datetime
+from dicom.dicom import init_dir, get_parameter, set_parameter, get_ecg_waveform
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+import numpy as np
 
 class DCMMainInterface:
     # Define parameter ranges for validation
     PARAMETER_RANGES = {
-        "lower_rate_limit": (30, 175),
-        "upper_rate_limit": (50, 175),
-        "atrial_amplitude": (0.0, 7.0),
-        "atrial_pulse_width": (0.05, 1.9),
-        "ventricular_amplitude": (0.0, 7.0),
-        "ventricular_pulse_width": (0.05, 1.9),
-        "vrp": (150, 500),
-        "arp": (150, 500),
-        "pvarp": (150, 500),
-        "hysteresis": (30, 175),
-        "rate_smoothing": (0, 25),
-        "atrial_sensitivity": (0.0, 10.0),
-        "ventricular_sensitivity": (0.0, 10.0),
+        "Lower Rate Limit": (30, 175),
+        "Upper Rate Limit": (50, 175),
+        "Atrial Amplitude": (0.0, 7.0),
+        "Atrial Pulse Width": (0.05, 1.9),
+        "Ventricular Amplitude": (0.0, 7.0),
+        "Ventricular Pulse Width": (0.05, 1.9),
+        "Atrial Sensitivity": (0.0, 10.0),
+        "Ventricular Sensitivity": (0.0, 10.0),
+        "VRP": (150, 500),
+        "ARP": (150, 500),
+        "PVARP": (150, 500),
+        "Hysteresis": (30, 175),
+        "Rate Smoothing": (0, 25),
     }
     
     # Define mode-specific parameters
     MODE_PARAMETERS = {
-        "AOO": ["lower_rate_limit", "upper_rate_limit", "atrial_amplitude", "atrial_pulse_width"],
-        "VOO": ["lower_rate_limit", "upper_rate_limit", "ventricular_amplitude", "ventricular_pulse_width"],
-        "AAI": ["lower_rate_limit", "upper_rate_limit", "atrial_amplitude", "atrial_pulse_width",
-                "atrial_sensitivity", "arp", "pvarp", "hysteresis", "rate_smoothing"],
-        "VVI": ["lower_rate_limit", "upper_rate_limit", "ventricular_amplitude", "ventricular_pulse_width",
-                "ventricular_sensitivity", "vrp", "hysteresis", "rate_smoothing"],
+        "AOO": ["Lower Rate Limit", "Upper Rate Limit", "Atrial Amplitude", "Atrial Pulse Width"],
+        "VOO": ["Lower Rate Limit", "Upper Rate Limit", "Ventricular Amplitude", "Ventricular Pulse Width"],
+        "AAI": ["Lower Rate Limit", "Upper Rate Limit", "Atrial Amplitude", "Atrial Pulse Width",
+                "Atrial Sensitivity", "ARP", "PVARP", "Hysteresis", "Rate Smoothing"],
+        "VVI": ["Lower Rate Limit", "Upper Rate Limit", "Ventricular Amplitude", "Ventricular Pulse Width",
+                "Ventricular Sensitivity", "VRP", "Hysteresis", "Rate Smoothing"],
     }
     
     # Parameter display names
     PARAMETER_LABELS = {
-        "lower_rate_limit": ("Lower Rate Limit (ppm)", "ppm"),
-        "upper_rate_limit": ("Upper Rate Limit (ppm)", "ppm"),
-        "atrial_amplitude": ("Atrial Amplitude (V)", "V"),
-        "atrial_pulse_width": ("Atrial Pulse Width (ms)", "ms"),
-        "ventricular_amplitude": ("Ventricular Amplitude (V)", "V"),
-        "ventricular_pulse_width": ("Ventricular Pulse Width (ms)", "ms"),
-        "vrp": ("VRP (ms)", "ms"),
-        "arp": ("ARP (ms)", "ms"),
-        "pvarp": ("PVARP (ms)", "ms"),
-        "hysteresis": ("Hysteresis (ppm)", "ppm"),
-        "rate_smoothing": ("Rate Smoothing (%)", "%"),
-        "atrial_sensitivity": ("Atrial Sensitivity (mV)", "mV"),
-        "ventricular_sensitivity": ("Ventricular Sensitivity (mV)", "mV"),
+        "Lower Rate Limit": ("Lower Rate Limit (ppm)", "ppm"),
+        "Upper Rate Limit": ("Upper Rate Limit (ppm)", "ppm"),
+        "Atrial Amplitude": ("Atrial Amplitude (V)", "V"),
+        "Atrial Pulse Width": ("Atrial Pulse Width (ms)", "ms"),
+        "Ventricular Amplitude": ("Ventricular Amplitude (V)", "V"),
+        "Ventricular Pulse Width": ("Ventricular Pulse Width (ms)", "ms"),
+        "VRP": ("VRP (ms)", "ms"),
+        "ARP": ("ARP (ms)", "ms"),
+        "PVARP": ("PVARP (ms)", "ms"),
+        "Hysteresis": ("Hysteresis (ppm)", "ppm"),
+        "Rate Smoothing": ("Rate Smoothing (%)", "%"),
+        "Atrial Sensitivity": ("Atrial Sensitivity (mV)", "mV"),
+        "Ventricular Sensitivity": ("Ventricular Sensitivity (mV)", "mV"),
     }
     
-    def __init__(self, root, username):
+    def __init__(self, root, username, patientID):
         self.root = root
         self.username = username
+        self.patientID = patientID
         self.root.title(f"PACEMAKER DCM - User: {username}")
         self.root.geometry("900x700")
+
+        # Initialize current mode
+        self.current_mode = "AOO"
+        self.current_param_type = "BRADY"
+        self.lead_type = "Atrial Lead"
         
         # Get base directory
         self.BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        # Get patient directory and initalize JSON
+        self.patient_dir = os.path.join(self.BASE_DIR, "data", self.username, self.patientID)
+        os.makedirs(self.patient_dir, exist_ok=True)
+        self.brady_json_path = os.path.join(self.patient_dir, "brady_params.json")
+        self.temp_json_path = os.path.join(self.patient_dir, "temp_params.json")
+        self.paths = init_dir(self.username, self.patientID)
+        self.initialize_json_files()
+
+        self.json_path = self.brady_json_path
+        self.current_json_data = self.brady_data if self.current_param_type == "BRADY" else self.temp_data
+        self.current_dcm_path = self.paths["BRADY_PARAM_DCM"] if self.current_param_type == "BRADY" else self.paths["TEMP_PARAM_DCM"]
         
         # Simulated device connection state
         self.connected_device = None
         self.connection_status = "Disconnected"
         self.last_device = None
         
-        # Initialize current mode
-        self.current_mode = "VVI"
-        
         # Initialize parameters
-        self.current_parameters = self.load_user_parameters()
-        
         self.create_main_interface()
+        self.current_parameters = self.load_user_parameters()
+
+        self.root.mainloop()
+
+    def initialize_json_files(self):
+        self.brady_data = self.load_or_create_json(self.brady_json_path, "BRADY_PARAM_DCM")
+        self.temp_data  = self.load_or_create_json(self.temp_json_path, "TEMP_PARAM_DCM")
+
+    def load_or_create_json(self, json_path, dicom_key):
+        # Create or load JSON containing pacing parameters for all modes.
+        if os.path.exists(json_path):
+            # Load existing session
+            with open(json_path, "r") as f:
+               data = json.load(f)
+            return data
+            
+        data = {}
+        # Initialize from DICOM files
+        for mode, params in self.MODE_PARAMETERS.items():
+            data[mode] = {}
+            for param in params:
+                val = get_parameter(self.paths[dicom_key], mode, param)
+                data[mode][param] = val if val is not None else ""
+        
+        with open(json_path, 'w') as f:
+            json.dump(data, f, indent=4)
+        
+        return data
     
     def create_main_interface(self):
         # Main container
@@ -88,6 +133,7 @@ class DCMMainInterface:
         self.create_mode_selector(main_frame)
         self.create_control_panel(main_frame)
         self.create_parameter_display(main_frame)
+        self.create_ecg_display(main_frame)
         self.create_action_buttons(main_frame)
     
     def create_status_bar(self, parent):
@@ -136,11 +182,16 @@ class DCMMainInterface:
         self.current_mode_label = ttk.Label(mode_frame, text=self.current_mode, 
                                            font=("Arial", 10, "bold"), foreground="blue")
         self.current_mode_label.grid(row=0, column=3, padx=5)
+
+        ttk.Label(mode_frame, text="Current Set:", font=("Arial", 10, "bold")).grid(row=0, column=4, padx=(20, 5))
+        self.current_set_label = ttk.Label(mode_frame, text=self.current_param_type, 
+                                           font=("Arial", 10, "bold"), foreground="blue")
+        self.current_set_label.grid(row=0, column=5, padx=5)
     
     def create_control_panel(self, parent):
         # Control buttons panel (Requirement 2)
         control_frame = ttk.LabelFrame(parent, text="Device Controls", padding="10")
-        control_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 5))
+        control_frame.grid(row=2, column=0, rowspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 5))
         
         ttk.Label(control_frame, text="Connection:", font=("Arial", 9, "bold")).pack(pady=(5,2))
         ttk.Button(control_frame, text="Connect to Device", command=self.connect_device).pack(fill=tk.X, pady=2)
@@ -156,6 +207,7 @@ class DCMMainInterface:
         
         ttk.Label(control_frame, text="Parameter Utilities:", font=("Arial", 9, "bold")).pack(pady=(5,2))
         ttk.Button(control_frame, text="Reset to Nominal", command=self.reset_to_nominal).pack(fill=tk.X, pady=2)
+        ttk.Button(control_frame, text="Switch Parameter Set", command=self.switch_parameter_set).pack(fill=tk.X, pady=2)
         
         ttk.Separator(control_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         
@@ -194,6 +246,26 @@ class DCMMainInterface:
         
         # Display parameters for current mode
         self.display_mode_parameters()
+
+    def create_ecg_display(self, parent):
+        # ECG waveform frame
+        ecg_frame = ttk.LabelFrame(parent, text="ECG Waveform", padding="10")
+        ecg_frame.grid(row=3, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10,0))
+
+        # Dropdown to select lead
+        self.lead_var = tk.StringVar(value=self.lead_type)
+        lead_dropdown = ttk.Combobox(ecg_frame, textvariable=self.lead_var,
+                                    values=["Atrial Lead", "Ventricular Lead", "Surface Lead"],
+                                    state="readonly", width=25)
+        lead_dropdown.pack(pady=(0,10))
+        lead_dropdown.bind("<<ComboboxSelected>>", self.on_lead_change)
+
+        # Matplotlib figure
+        self.fig, self.ax = plt.subplots(figsize=(5,2))
+        self.canvas = FigureCanvasTkAgg(self.fig, master=ecg_frame)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        self.plot_waveform()
     
     def display_mode_parameters(self):
         # Display only parameters relevant to the current mode
@@ -223,6 +295,10 @@ class DCMMainInterface:
             entry = ttk.Entry(self.scrollable_frame, width=15)
             entry.grid(row=row, column=1, padx=5, pady=5)
             
+            # Ensure current_parameters exists
+            if not hasattr(self, "current_parameters") or self.current_parameters is None:
+                self.current_parameters = {}
+
             # Get default value
             default_value = self.current_parameters.get(param_key, self.get_nominal_value(param_key))
             entry.insert(0, str(default_value))
@@ -240,23 +316,66 @@ class DCMMainInterface:
                 'entry': entry,
                 'range': range_label
             }
+
+    # Function to plot waveform
+    def plot_waveform(self):
+        if self.lead_type == "Atrial Lead" or self.lead_type == "Ventricular Lead":
+            filepath = self.paths["LEAD_WAVFRM_DCM"]
+        elif self.lead_type == "Surface Lead":
+            filepath = self.paths["SURFACE_ECG_DCM"]
+        else:
+            return
+        
+        data = get_ecg_waveform(filepath, self.lead_type)
+        print(f"{self.lead_type}: dtype={data.dtype}, min={np.min(data)}, max={np.max(data)}, len={len(data)}")
+        
+        # ensure data is numeric
+        if data is None or len(data) == 0:
+            self.ax.clear()
+            self.ax.set_title(f"{self.lead_type} Waveform")
+            self.ax.set_xlabel("Sample #")
+            self.ax.set_ylabel("Amplitude")
+            self.ax.text(0.5, 0.5, "No Data", transform=self.ax.transAxes,
+                        ha='center', va='center', fontsize=12, color='gray')
+            self.canvas.draw()
+            return
+
+        data = np.array(data, dtype=float)  # <-- Convert to numeric
+        self.ax.clear()
+        self.ax.plot(data, color='red')
+        self.ax.set_title(f"{self.lead_type} Waveform")
+        self.ax.set_xlabel("Sample #")
+        self.ax.set_ylabel("Amplitude")
+
+        ymin, ymax = np.min(data), np.max(data)
+        if ymin == ymax:
+            pad = 0.1 if ymin == 0 else abs(ymin) * 0.1
+            ymin, ymax = ymin - pad, ymax + pad
+        else:
+            yrange = ymax - ymin
+            ymin -= 0.1 * yrange
+            ymax += 0.1 * yrange
+        self.ax.set_ylim(ymin, ymax)
+        self.ax.set_xlim(0, len(data))
+
+        self.canvas.draw()
     
     def get_nominal_value(self, param_key):
         # Get nominal/default value for a parameter
         nominal_values = {
-            "lower_rate_limit": 60,
-            "upper_rate_limit": 120,
-            "atrial_amplitude": 3.5,
-            "atrial_pulse_width": 0.4,
-            "ventricular_amplitude": 3.5,
-            "ventricular_pulse_width": 0.4,
-            "vrp": 320,
-            "arp": 250,
-            "pvarp": 250,
-            "hysteresis": 60,
-            "rate_smoothing": 0,
-            "atrial_sensitivity": 0.75,
-            "ventricular_sensitivity": 2.5,
+            "Lower Rate Limit": 60,
+            "Upper Rate Limit": 120,
+            "Atrial Amplitude": 3.5,
+            "Atrial Pulse Width": 0.4,
+            "Ventricular Amplitude": 3.5,
+            "Ventricular Pulse Width": 0.4,
+            "VRP": 320,
+            "ARP": 250,
+            "PVARP": 250,
+            "Hysteresis": 60,
+            "Rate Smoothing": 0,
+            "Atrial Sensitivity": 0.75,
+            "Ventricular Sensitivity": 2.5,
         }
         return nominal_values.get(param_key, 0)
     
@@ -267,7 +386,46 @@ class DCMMainInterface:
             self.current_mode = new_mode
             self.current_mode_label.config(text=self.current_mode)
             self.display_mode_parameters()
+            self.current_parameters = self.current_json_data.get(self.current_mode, {})
+            self.display_mode_parameters()
             messagebox.showinfo("Mode Changed", f"Switched to {self.current_mode} mode")
+
+    def on_lead_change(self, event=None):
+        # Handle mode change event
+        new_lead = self.lead_var.get()
+        if new_lead != self.lead_type:
+            self.lead_type = new_lead
+            self.plot_waveform()
+            messagebox.showinfo("Lead Changed", f"Switched to {self.lead_type} lead")
+
+    def switch_parameter_set(self):
+        # Switch between Bradycardia and Temporary parameters
+        new_type = "TEMP" if self.current_param_type == "BRADY" else "BRADY"
+
+        # confirm switch
+        if not messagebox.askyesno("Switch Parameter Set",
+                                   f"Switch from {self.current_param_type} to {new_type} parameters?\nUnsaved changes will be lost!"
+        ):
+            return
+        
+        self.save_parameters_silent()
+        
+        self.current_param_type = new_type
+        if new_type == "BRADY":
+            self.current_dcm_path = self.paths["BRADY_PARAM_DCM"]
+            self.json_path = self.brady_json_path
+            self.current_json_data = self.brady_data
+        else:
+            self.current_dcm_path = self.paths["TEMP_PARAM_DCM"]
+            self.json_path = self.temp_json_path
+            self.current_json_data = self.temp_data
+
+        self.current_set_label.config(text=self.current_param_type)
+        self.display_mode_parameters()
+        self.current_parameters = self.current_json_data.get(self.current_mode, {})
+        self.load_user_parameters()
+        self.display_mode_parameters()
+        messagebox.showinfo("Parameter Set Switched", f"Now editing {new_type} parameters.")
     
     def validate_parameter(self, param_key, value):
         # Validate a parameter value against its allowed range
@@ -298,12 +456,13 @@ class DCMMainInterface:
     def create_action_buttons(self, parent):
         # Bottom action buttons
         button_frame = ttk.Frame(parent)
-        button_frame.grid(row=3, column=0, columnspan=2, pady=(10, 0))
+        button_frame.grid(row=4, column=0, columnspan=2, pady=(10, 0))
         
         ttk.Button(button_frame, text="Save Parameters", command=self.save_parameters, 
                    style="Accent.TButton").pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Revert Changes", command=self.revert_changes).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Logout", command=self.logout).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Back to Patient Selection", command=self.back_to_patient_selection).pack(side=tk.LEFT, padx=5)
     
     # Device control methods
     
@@ -431,78 +590,92 @@ class DCMMainInterface:
             messagebox.showerror("Validation Error", 
                                "Cannot save parameters:\n\n" + "\n".join(errors))
             return
-        
+
         # Update current parameters
         for key, entry in self.parameter_entries.items():
             try:
-                self.current_parameters[key] = float(entry.get())
+                value = float(entry.get())
+                self.current_parameters[key] = value
+                self.current_json_data[self.current_mode][key] = value
+                set_parameter(self.current_dcm_path, self.current_mode, key, value)
             except ValueError:
                 messagebox.showerror("Error", f"Invalid value for {key}")
                 return
-        
-        # Save current mode
-        self.current_parameters['mode'] = self.current_mode
-        
+
         # Save to file
-        self.save_user_parameters()
+        with open(self.json_path, 'w') as f:
+            json.dump(self.brady_data, f, indent=4)
         messagebox.showinfo("Saved", f"Parameters saved to DCM storage for user: {self.username}")
     
     def save_parameters_silent(self):
-        # Save parameters without showing success message (used after programming)
+        # Save parameters without showing success message (used after programming)     
         for key, entry in self.parameter_entries.items():
             try:
-                self.current_parameters[key] = float(entry.get())
+                value = float(entry.get())
+                self.current_parameters[key] = value
+                self.current_json_data[self.current_mode][key] = value
+                set_parameter(self.current_dcm_path, self.current_mode, key, value)
             except ValueError:
                 return
-        
-        self.current_parameters['mode'] = self.current_mode
-        self.save_user_parameters()
+
+        with open(self.json_path, 'w') as f:
+            json.dump(self.brady_data, f, indent=4)
     
     def logout(self):
         # Logout and return to login
         if messagebox.askyesno("Logout", "Logout and return to login screen?"):
-            self.root.destroy()
+            self.save_parameters_silent()
+            # Remove JSON files
+            for path in [self.brady_json_path, self.temp_json_path]:
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                except Exception as e:
+                    print(f"Could not remove path: {e}")
+
             # Restart login window
-            import login
-            login.main()
+            self.root.destroy()
+            import gui.login
+            gui.login.main()
+
+    def back_to_patient_selection(self):
+        # Return to the patient selection window.
+        if messagebox.askyesno("Return", "Return to patient selection? Unsaved changes will be lost."):
+            self.save_parameters_silent()
+            # Remove JSON files
+            for path in [self.brady_json_path, self.temp_json_path]:
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                except Exception as e:
+                    print(f"Could not remove path: {e}")
+
+            self.root.destroy()
+            main_root = tk.Tk()
+            from gui.patient_select import PatientSelectApp
+            PatientSelectApp(main_root, self.username)
+            main_root.mainloop()
     
     # Data persistence
     
-    def load_user_parameters(self):
-        # Load user-specific parameters
-        param_file = os.path.join(self.BASE_DIR, f"data/params_{self.username}.json")
-        try:
-            with open(param_file, 'r') as f:
-                params = json.load(f)
-                # Load saved mode if available
-                if 'mode' in params:
-                    self.current_mode = params['mode']
-                return params
-        except FileNotFoundError:
-            # Return default parameters
-            return {
-                "lower_rate_limit": 60,
-                "upper_rate_limit": 120,
-                "atrial_amplitude": 3.5,
-                "atrial_pulse_width": 0.4,
-                "ventricular_amplitude": 3.5,
-                "ventricular_pulse_width": 0.4,
-                "vrp": 320,
-                "arp": 250,
-                "pvarp": 250,
-                "hysteresis": 60,
-                "rate_smoothing": 0,
-                "atrial_sensitivity": 0.75,
-                "ventricular_sensitivity": 2.5,
-                "mode": "VVI"
-            }
+    def load_user_parameters(self): 
+        # Update title and status labels
+        self.root.title(f"PACEMAKER DCM - {self.current_param_type} - User: {self.username}")
+        # Load user-specific parameters 
+        params = {}
+
+        for param, entry in self.parameter_entries.items():
+            entry.delete(0, tk.END)
+            entry_value = self.current_json_data.get(self.current_mode, {}).get(param, self.get_nominal_value(param))
+            entry.insert(0, entry_value)
+            params[param] = entry_value
+
+        return params
     
-    def save_user_parameters(self):
-        # Save user-specific parameters
-        # Create data directory if it doesn't exist
-        data_dir = os.path.join(self.BASE_DIR, "data")
-        os.makedirs(data_dir, exist_ok=True)
+    # def save_user_parameters(self, param_file):
+    #     # Save user-specific parameters
+    #     # Create data directory if it doesn't exist
+    #     os.makedirs(param_file, exist_ok=True)
         
-        param_file = os.path.join(data_dir, f"params_{self.username}.json")
-        with open(param_file, 'w') as f:
-            json.dump(self.current_parameters, f, indent=2)
+    #     with open(param_file, 'w') as f:
+    #         json.dump(self.current_parameters, f, indent=2)

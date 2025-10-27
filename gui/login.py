@@ -9,14 +9,14 @@ def attempt_login(user, pwd, root):
     if (user != '') and (pwd != '') and check_login(user, pwd):
         messagebox.showinfo("Login", f"Welcome {user}!")
         root.destroy()  # Close login window
-        launch_main_interface(user)  # Launch main DCM interface
+        launch_patient_select(user)  # Launch main DCM interface
     else:
         messagebox.showerror("Login", "Invalid credentials")
 
-def launch_main_interface(username):
+def launch_patient_select(username):
     main_root = tk.Tk()
-    from gui.main_interface import DCMMainInterface
-    DCMMainInterface(main_root, username)
+    from gui.patient_select import PatientSelectApp
+    PatientSelectApp(main_root, username)
     main_root.mainloop()
 
 # Attempt to register new user with entered username and password
@@ -42,22 +42,46 @@ def clearing_users():
 def main():
     init_db() # initialize users.db
 
-    # Username entry field
     root = tk.Tk()
-    tk.Label(root, text="Username").pack()
-    username_entry = tk.Entry(root)
-    username_entry.pack()
+    root.title("DCM Login")
+    root.geometry("400x300")  # Larger, more comfortable window
+    root.resizable(False, False)
 
-    # Password entry field
-    tk.Label(root, text="Password").pack()
-    password_entry = tk.Entry(root, show="*")
-    password_entry.pack()
+    font_style = ("Arial", 9)  # Match your main interface font
 
-    # Button Inputs
+    # Use a centered frame for layout
+    frame = tk.Frame(root, padx=20, pady=20)
+    frame.place(relx=0.5, rely=0.5, anchor="center")
+
+    # Username
+    tk.Label(frame, text="Username:", font=font_style).grid(row=0, column=0, sticky="w", pady=(0, 10))
+    username_entry = tk.Entry(frame, width=30, font=font_style)
+    username_entry.grid(row=0, column=1, pady=(0, 10))
+
+    # Password
+    tk.Label(frame, text="Password:", font=font_style).grid(row=1, column=0, sticky="w", pady=(0, 20))
+    password_entry = tk.Entry(frame, show="*", width=30, font=font_style)
+    password_entry.grid(row=1, column=1, pady=(0, 20))
+
+    # Buttons (Login & Register side by side)
+    btn_frame = tk.Frame(frame)
+    btn_frame.grid(row=2, column=0, columnspan=2)
+
     # 'lambda' is required to run the function with parameters on button press
-    tk.Button(root, text="Login", command=lambda: attempt_login(username_entry.get(), password_entry.get(), root)).pack() 
-    tk.Button(root, text="Register", command=lambda: attempt_register(username_entry.get(), password_entry.get())).pack()
-    tk.Button(root, text="Clear Users", command=clearing_users).pack() # 'lambda' not needed because there are no parameters
+    tk.Button(
+        btn_frame, text="Login", width=12, 
+        command=lambda: attempt_login(username_entry.get(), password_entry.get(), root)
+    ).pack(side="left", padx=10)
+
+    tk.Button(
+        btn_frame, text="Register", width=12, 
+        command=lambda: attempt_register(username_entry.get(), password_entry.get())
+    ).pack(side="left", padx=10)
+
+    tk.Button(root, text="Clear Users", font=font_style, width = 11, command=clearing_users).pack(pady=(220, 10))
+
+    # (Optional) Keyboard focus
+    username_entry.focus()
 
     root.mainloop()
 

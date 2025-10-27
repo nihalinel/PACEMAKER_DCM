@@ -1,6 +1,7 @@
 import os
 import datetime
 import tzlocal
+import numpy as np
 
 from pydicom import dcmread
 
@@ -42,7 +43,7 @@ def save_dicom(ds, filepath):
         ds.InstanceCreationTime = dt.strftime("%H%M%S")
 
     elif ds.Modality == "ECG":
-        ds.AcquisitionDateTime = f"{dt.strftime("%Y%m%d")}{dt.strftime("%H%M%S")}"
+        ds.AcquisitionDateTime = f"{dt.strftime('%Y%m%d')}{dt.strftime('%H%M%S')}"
 
     else:
         raise ValueError("File is neither Basic Test SR nor ECG Waveform")
@@ -165,3 +166,46 @@ def set_waveparam(filepath, label, parameter, value, save=True):
             
     # if we get here, parameter or lead wasn't found
     raise ValueError(f"Lead '{label}' not found in WaveformSequence.")
+ 
+# Fetch the waveform data for plotting
+def get_ecg_waveform(filepath, label):
+    ds = dcmread(filepath)
+    
+    if label == "Atrial Lead":
+        data = ds.WaveformSequence[0].WaveformData
+    elif label == "Ventricular Lead":
+        data = ds.WaveformSequence[1].WaveformData
+    elif label == "Surface Lead":
+        data = ds.WaveformSequence[0].WaveformData
+    else:
+        raise ValueError(f"Unknown lead_label: {label}")
+    
+    # Ensure we return numeric data
+    if isinstance(data, bytes):
+        data = np.frombuffer(data, dtype=np.int16).astype(float) / 1000
+    else:
+        data = np.array(data, dtype=float)
+
+    if data.size == 0:
+        data = np.zeros(500, dtype=float)
+
+    return data.flatten()
+
+# Write the waveform data for plotting
+def set_ecg_waveform(filepath, label, data):
+    ds = dcmread(filepath)
+
+    # Always store as int16 bytes (standard for waveform DICOM)
+    data = np.asarray(data, dtype=np.float32)
+    data_bytes = (data * 1000).astype(np.int16).tobytes()
+    
+    if label == "Atrial Lead":
+        ds.WaveformSequence[0].WaveformData = data_bytes
+    elif label == "Ventricular Lead":
+        ds.WaveformSequence[1].WaveformData = data_bytes
+    elif label == "Surface Lead":
+        ds.WaveformSequence[0].WaveformData = data_bytes
+    else:
+        raise ValueError(f"Unknown lead_label: {label}")
+    
+    save_dicom(ds, filepath)

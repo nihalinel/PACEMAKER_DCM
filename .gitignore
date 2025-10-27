@@ -18,9 +18,9 @@ __pycache__/
 *.sqlite3
 data/users.db
 
-# DICOM
+# DICOM / User JSON
 *.dcm
-data/test_user/
+data/*/
 
 # Distribution / packaging
 build/

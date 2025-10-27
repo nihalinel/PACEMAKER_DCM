@@ -1,6 +1,7 @@
 import sqlite3
 import bcrypt
 import os
+import shutil
 
 MAX_USERS = 10
 
@@ -82,3 +83,14 @@ def clear_users():
     c.execute("DELETE FROM users")
     conn.commit()
     conn.close()
+
+    # Delete all user folders in data/
+    data_dir = os.path.join(BASE_DIR, "data")
+    if os.path.exists(data_dir):
+        for user_folder in os.listdir(data_dir):
+            user_path = os.path.join(data_dir, user_folder)
+            if os.path.isdir(user_path):
+                try:
+                    shutil.rmtree(user_path)  # recursively delete folder
+                except Exception as e:
+                    print(f"Could not remove folder {user_path}: {e}")

@@ -1,0 +1,35 @@
+{
+    "AOO": {
+        "Lower Rate Limit": 60.0,
+        "Upper Rate Limit": 120.0,
+        "Atrial Amplitude": 3.5,
+        "Atrial Pulse Width": 0.4
+    },
+    "VOO": {
+        "Lower Rate Limit": 60.0,
+        "Upper Rate Limit": 120.0,
+        "Ventricular Amplitude": 3.5,
+        "Ventricular Pulse Width": 0.4
+    },
+    "AAI": {
+        "Lower Rate Limit": 60.0,
+        "Upper Rate Limit": 120.0,
+        "Atrial Amplitude": 3.5,
+        "Atrial Pulse Width": 0.4,
+        "Atrial Sensitivity": 0.75,
+        "ARP": 258.0,
+        "PVARP": 250.0,
+        "Hysteresis": 60.0,
+        "Rate Smoothing": 0.0
+    },
+    "VVI": {
+        "Lower Rate Limit": 60.0,
+        "Upper Rate Limit": 120.0,
+        "Ventricular Amplitude": 3.5,
+        "Ventricular Pulse Width": 0.4,
+        "Ventricular Sensitivity": 2.5,
+        "VRP": 320,
+        "Hysteresis": 60.0,
+        "Rate Smoothing": 0.0
+    }
+}

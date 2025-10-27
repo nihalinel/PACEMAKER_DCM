@@ -39,7 +39,7 @@ test_paths = {
     }
 
 MODE_PARAMETERS = {
-    "AAO": ["Lower Rate Limit", "Upper Rate Limit", "Atrial Amplitude", "Atrial Pulse Width"],
+    "AOO": ["Lower Rate Limit", "Upper Rate Limit", "Atrial Amplitude", "Atrial Pulse Width"],
     "VOO": ["Lower Rate Limit", "Upper Rate Limit", "Ventricular Amplitude", "Ventricular Pulse Width"],
     "AAI": ["Lower Rate Limit", "Upper Rate Limit", "Atrial Amplitude", "Atrial Pulse Width",
             "Atrial Sensitivity", "ARP", "PVARP", "Hysteresis", "Rate Smoothing"],

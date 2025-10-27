@@ -1,0 +1,15 @@
+# PACEMAKER_DCM Requirements
+# Install all dependencies with: pip install -r requirements.txt
+
+bcrypt>=4.0.0
+matplotlib>=3.10.0
+pillow>=11.0.0
+pydicom>=3.0.0
+numpy>=2.3.0
+tzlocal>=5.3.0
+
+# Note: sqlite3 comes built-in with Python (part of standard library)
+# Note: tkinter comes built-in with Python on most systems
+#       If tkinter is missing on Linux, install with:
+#       Ubuntu/Debian: sudo apt-get install python3-tk
+#       Fedora: sudo dnf install python3-tkinter

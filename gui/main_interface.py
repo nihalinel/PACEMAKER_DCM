@@ -444,12 +444,26 @@ class DCMMainInterface:
         # Validate all current parameter values
         errors = []
         
+        # First, validate ranges for all parameters
         for param_key, entry in self.parameter_entries.items():
             value = entry.get()
             is_valid, error_msg = self.validate_parameter(param_key, value)
             
             if not is_valid:
                 errors.append(error_msg)
+        
+        # If no range errors, check inter-parameter constraints
+        if not errors:
+            try:
+                # Check LRL vs URL constraint (only if both exist in current mode)
+                if 'Lower Rate Limit' in self.parameter_entries and 'Upper Rate Limit' in self.parameter_entries:
+                    lrl = float(self.parameter_entries['Lower Rate Limit'].get())
+                    url = float(self.parameter_entries['Upper Rate Limit'].get())
+                    
+                    if lrl > url:
+                        errors.append("Lower Rate Limit cannot be greater than Upper Rate Limit")
+            except ValueError:
+                pass  # Already caught by range validation
         
         return errors
     

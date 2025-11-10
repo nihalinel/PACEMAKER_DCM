@@ -101,7 +101,10 @@ def set_parameter(filepath, mode, parameter, value, save=True):
 
                     # updates numeric value
                     try:
-                        subitem.MeasuredValueSequence[0].NumericValue = float(value)
+                        if parameter == "Activity Threshold":
+                            subitem.MeasuredValueSequence[0].TextValue = value
+                        else:
+                            subitem.MeasuredValueSequence[0].NumericValue = float(value)
                         if save:
                             save_dicom(ds, filepath)
                         return True

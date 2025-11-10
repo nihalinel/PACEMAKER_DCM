@@ -31,5 +31,58 @@
         "VRP": 320,
         "Hysteresis": 60.0,
         "Rate Smoothing": 0.0
+    },
+    "AOOR": {
+        "Lower Rate Limit": 60.0,
+        "Upper Rate Limit": 120.0,
+        "Maximum Sensor Rate": 120.0,
+        "Atrial Amplitude": 3.5,
+        "Atrial Pulse Width": 0.4,
+        "Activity Threshold": "Med",
+        "Reaction Time": 30.0,
+        "Response Factor": 8.0,
+        "Recovery Time": 5.0
+    },
+    "VOOR": {
+        "Lower Rate Limit": 60.0,
+        "Upper Rate Limit": 120.0,
+        "Maximum Sensor Rate": 120.0,
+        "Ventricular Amplitude": 3.5,
+        "Ventricular Pulse Width": 0.4,
+        "Activity Threshold": "Med",
+        "Reaction Time": 30.0,
+        "Response Factor": 8.0,
+        "Recovery Time": 5.0
+    },
+    "AAIR": {
+        "Lower Rate Limit": 60.0,
+        "Upper Rate Limit": 120.0,
+        "Maximum Sensor Rate": 120.0,
+        "Atrial Amplitude": 3.5,
+        "Atrial Pulse Width": 0.4,
+        "Atrial Sensitivity": 0.75,
+        "ARP": 258.0,
+        "PVARP": 250.0,
+        "Hysteresis": 60.0,
+        "Rate Smoothing": 0.0,
+        "Activity Threshold": "Med",
+        "Reaction Time": 30.0,
+        "Response Factor": 8.0,
+        "Recovery Time": 5.0
+    },
+    "VVIR": {
+        "Lower Rate Limit": 60.0,
+        "Upper Rate Limit": 120.0,
+        "Maximum Sensor Rate": 120.0,
+        "Ventricular Amplitude": 3.5,
+        "Ventricular Pulse Width": 0.4,
+        "Ventricular Sensitivity": 2.5,
+        "VRP": 320,
+        "Hysteresis": 60.0,
+        "Rate Smoothing": 0.0,
+        "Activity Threshold": "Med",
+        "Reaction Time": 30.0,
+        "Response Factor": 8.0,
+        "Recovery Time": 5.0
     }
 }

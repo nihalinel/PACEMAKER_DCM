@@ -7,6 +7,7 @@ from pydicom.uid import ExplicitVRLittleEndian, generate_uid, UID, BasicTextSRSt
 PARAM_UNITS = {
     "Lower Rate Limit": "ppm",
     "Upper Rate Limit": "ppm",
+    "Maximum Sensor Rate": "ppm",
     "Atrial Amplitude": "V",
     "Ventricular Amplitude": "V",
     "Atrial Pulse Width": "ms",
@@ -18,15 +19,29 @@ PARAM_UNITS = {
     "PVARP": "ms",
     "Hysteresis": "ppm",
     "Rate Smoothing": "%",
+    "Activity Threshold": "", 
+    "Reaction Time": "s", 
+    "Response Factor": "", 
+    "Recovery Time": "min",
 }
 
 MODE_PARAMETERS = {
-    "AOO": ["Lower Rate Limit", "Upper Rate Limit", "Atrial Amplitude", "Atrial Pulse Width"],
-    "VOO": ["Lower Rate Limit", "Upper Rate Limit", "Ventricular Amplitude", "Ventricular Pulse Width"],
-    "AAI": ["Lower Rate Limit", "Upper Rate Limit", "Atrial Amplitude", "Atrial Pulse Width",
+    "AOO" : ["Lower Rate Limit", "Upper Rate Limit", "Atrial Amplitude", "Atrial Pulse Width"],
+    "VOO" : ["Lower Rate Limit", "Upper Rate Limit", "Ventricular Amplitude", "Ventricular Pulse Width"],
+    "AAI" : ["Lower Rate Limit", "Upper Rate Limit", "Atrial Amplitude", "Atrial Pulse Width",
             "Atrial Sensitivity", "ARP", "PVARP", "Hysteresis", "Rate Smoothing"],
-    "VVI": ["Lower Rate Limit", "Upper Rate Limit", "Ventricular Amplitude", "Ventricular Pulse Width",
+    "VVI" : ["Lower Rate Limit", "Upper Rate Limit", "Ventricular Amplitude", "Ventricular Pulse Width",
             "Ventricular Sensitivity", "VRP", "Hysteresis", "Rate Smoothing"],
+    "AOOR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Atrial Amplitude", "Atrial Pulse Width", 
+             "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
+    "VOOR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Ventricular Amplitude", "Ventricular Pulse Width", 
+             "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
+    "AAIR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Atrial Amplitude", "Atrial Pulse Width",
+            "Atrial Sensitivity", "ARP", "PVARP", "Hysteresis", "Rate Smoothing", 
+            "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
+    "VVIR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Ventricular Amplitude", "Ventricular Pulse Width",
+            "Ventricular Sensitivity", "VRP", "Hysteresis", "Rate Smoothing", 
+            "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
 }
 
 def param_sequence(mode):
@@ -42,21 +57,28 @@ def param_sequence(mode):
     mode_item.ContentSequence = []
     for param_name in MODE_PARAMETERS[mode]:
         param_item = Dataset()
-        param_item.ValueType = "NUM"
+        if param_name == "Activity Threshold":
+            param_item.ValueType = "TEXT"
+        else:
+            param_item.ValueType = "NUM"
 
         concept = Dataset()
         concept.CodeValue = param_name.replace(" ","_").upper()
         concept.CodingSchemeDesignator = "99EPIC"
         concept.CodeMeaning = param_name
-
-        units = Dataset()
-        units.CodeValue = PARAM_UNITS.get(param_name, "")
-        units.CodingSchemeDesignator = "UCUM"
-        units.CodeMeaning = PARAM_UNITS.get(param_name, "")
+    
+        if param_name != "Activity Threshold":
+            units = Dataset()
+            units.CodeValue = PARAM_UNITS.get(param_name, "")
+            units.CodingSchemeDesignator = "UCUM"
+            units.CodeMeaning = PARAM_UNITS.get(param_name, "")
 
         mv = Dataset()
-        mv.NumericValue = 0
-        mv.MeasurementUnitsCodeSequence = [units]
+        if param_name == "Activity Threshold":
+            mv.TextValue = ""
+        else:
+            mv.NumericValue = 0
+            mv.MeasurementUnitsCodeSequence = [units]
         
         param_item.ConceptNameCodeSequence = [concept]
         param_item.MeasuredValueSequence = [mv]

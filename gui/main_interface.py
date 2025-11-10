@@ -14,6 +14,7 @@ class DCMMainInterface:
     PARAMETER_RANGES = {
         "Lower Rate Limit": (30, 175),
         "Upper Rate Limit": (50, 175),
+        "Maximum Sensor Rate": (50, 175),
         "Atrial Amplitude": (0.0, 7.0),
         "Atrial Pulse Width": (0.05, 1.9),
         "Ventricular Amplitude": (0.0, 7.0),
@@ -25,33 +26,52 @@ class DCMMainInterface:
         "PVARP": (150, 500),
         "Hysteresis": (30, 175),
         "Rate Smoothing": (0, 25),
+        "Activity Threshold": ["V-Low", "Low", "Med-Low", "Med", "Med-High", "High", "V-High"],
+        "Reaction Time": (10, 50),
+        "Response Factor": (1, 16),
+        "Recovery Time": (2, 16),
     }
     
     # Define mode-specific parameters
     MODE_PARAMETERS = {
-        "AOO": ["Lower Rate Limit", "Upper Rate Limit", "Atrial Amplitude", "Atrial Pulse Width"],
-        "VOO": ["Lower Rate Limit", "Upper Rate Limit", "Ventricular Amplitude", "Ventricular Pulse Width"],
-        "AAI": ["Lower Rate Limit", "Upper Rate Limit", "Atrial Amplitude", "Atrial Pulse Width",
+        "AOO" : ["Lower Rate Limit", "Upper Rate Limit", "Atrial Amplitude", "Atrial Pulse Width"],
+        "VOO" : ["Lower Rate Limit", "Upper Rate Limit", "Ventricular Amplitude", "Ventricular Pulse Width"],
+        "AAI" : ["Lower Rate Limit", "Upper Rate Limit", "Atrial Amplitude", "Atrial Pulse Width",
                 "Atrial Sensitivity", "ARP", "PVARP", "Hysteresis", "Rate Smoothing"],
-        "VVI": ["Lower Rate Limit", "Upper Rate Limit", "Ventricular Amplitude", "Ventricular Pulse Width",
+        "VVI" : ["Lower Rate Limit", "Upper Rate Limit", "Ventricular Amplitude", "Ventricular Pulse Width",
                 "Ventricular Sensitivity", "VRP", "Hysteresis", "Rate Smoothing"],
+        "AOOR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Atrial Amplitude", "Atrial Pulse Width", 
+                 "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
+        "VOOR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Ventricular Amplitude", "Ventricular Pulse Width", 
+                 "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
+        "AAIR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Atrial Amplitude", "Atrial Pulse Width",
+                "Atrial Sensitivity", "ARP", "PVARP", "Hysteresis", "Rate Smoothing", 
+                "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
+        "VVIR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Ventricular Amplitude", "Ventricular Pulse Width",
+                "Ventricular Sensitivity", "VRP", "Hysteresis", "Rate Smoothing", 
+                "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
     }
     
     # Parameter display names
     PARAMETER_LABELS = {
         "Lower Rate Limit": ("Lower Rate Limit (ppm)", "ppm"),
         "Upper Rate Limit": ("Upper Rate Limit (ppm)", "ppm"),
+        "Maximum Sensor Rate": ("Maximum Sensor Rate (ppm)", "ppm"),
         "Atrial Amplitude": ("Atrial Amplitude (V)", "V"),
         "Atrial Pulse Width": ("Atrial Pulse Width (ms)", "ms"),
         "Ventricular Amplitude": ("Ventricular Amplitude (V)", "V"),
         "Ventricular Pulse Width": ("Ventricular Pulse Width (ms)", "ms"),
+        "Atrial Sensitivity": ("Atrial Sensitivity (mV)", "mV"),
+        "Ventricular Sensitivity": ("Ventricular Sensitivity (mV)", "mV"),
         "VRP": ("VRP (ms)", "ms"),
         "ARP": ("ARP (ms)", "ms"),
         "PVARP": ("PVARP (ms)", "ms"),
         "Hysteresis": ("Hysteresis (ppm)", "ppm"),
         "Rate Smoothing": ("Rate Smoothing (%)", "%"),
-        "Atrial Sensitivity": ("Atrial Sensitivity (mV)", "mV"),
-        "Ventricular Sensitivity": ("Ventricular Sensitivity (mV)", "mV"),
+        "Activity Threshold": ("Activity Threshold", ""),
+        "Reaction Time": ("Reaction Time (s)", "s"),
+        "Response Factor": ("Response Factor", ""),
+        "Recovery Time": ("Recovery Time", "min")
     }
     
     def __init__(self, root, username, patientID):

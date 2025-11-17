@@ -26,7 +26,7 @@ class DCMMainInterface:
         "PVARP": (150, 500),
         "Hysteresis": (30, 175),
         "Rate Smoothing": (0, 25),
-        "Activity Threshold": ["V-Low", "Low", "Med-Low", "Med", "Med-High", "High", "V-High"],
+        # "Activity Threshold": ["V-Low", "Low", "Med-Low", "Med", "Med-High", "High", "V-High"],
         "Reaction Time": (10, 50),
         "Response Factor": (1, 16),
         "Recovery Time": (2, 16),
@@ -41,15 +41,15 @@ class DCMMainInterface:
         "VVI" : ["Lower Rate Limit", "Upper Rate Limit", "Ventricular Amplitude", "Ventricular Pulse Width",
                 "Ventricular Sensitivity", "VRP", "Hysteresis", "Rate Smoothing"],
         "AOOR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Atrial Amplitude", "Atrial Pulse Width", 
-                 "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
+                 "Reaction Time", "Response Factor", "Recovery Time"],
         "VOOR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Ventricular Amplitude", "Ventricular Pulse Width", 
-                 "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
+                 "Reaction Time", "Response Factor", "Recovery Time"],
         "AAIR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Atrial Amplitude", "Atrial Pulse Width",
                 "Atrial Sensitivity", "ARP", "PVARP", "Hysteresis", "Rate Smoothing", 
-                "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
+                "Reaction Time", "Response Factor", "Recovery Time"],
         "VVIR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Ventricular Amplitude", "Ventricular Pulse Width",
                 "Ventricular Sensitivity", "VRP", "Hysteresis", "Rate Smoothing", 
-                "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
+                "Reaction Time", "Response Factor", "Recovery Time"],
     }
     
     # Parameter display names
@@ -68,10 +68,10 @@ class DCMMainInterface:
         "PVARP": ("PVARP (ms)", "ms"),
         "Hysteresis": ("Hysteresis (ppm)", "ppm"),
         "Rate Smoothing": ("Rate Smoothing (%)", "%"),
-        "Activity Threshold": ("Activity Threshold", ""),
         "Reaction Time": ("Reaction Time (s)", "s"),
         "Response Factor": ("Response Factor", ""),
-        "Recovery Time": ("Recovery Time", "min")
+        "Recovery Time": ("Recovery Time", "min"),
+        #"Activity Threshold": ("Activity Threshold", ""),
     }
     
     def __init__(self, root, username, patientID):
@@ -385,17 +385,21 @@ class DCMMainInterface:
         nominal_values = {
             "Lower Rate Limit": 60,
             "Upper Rate Limit": 120,
+            "Maximum Sensor Rate": 120,
             "Atrial Amplitude": 3.5,
             "Atrial Pulse Width": 0.4,
             "Ventricular Amplitude": 3.5,
             "Ventricular Pulse Width": 0.4,
+            "Atrial Sensitivity": 0.75,
+            "Ventricular Sensitivity": 2.5,
             "VRP": 320,
             "ARP": 250,
             "PVARP": 250,
             "Hysteresis": 60,
             "Rate Smoothing": 0,
-            "Atrial Sensitivity": 0.75,
-            "Ventricular Sensitivity": 2.5,
+            "Reaction Time": 30,
+            "Response Factor": 8,
+            "Recovery Time": 5,
         }
         return nominal_values.get(param_key, 0)
     

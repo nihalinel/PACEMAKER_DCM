@@ -8,6 +8,7 @@ from dicom.dicom import init_dir, get_parameter, set_parameter, get_ecg_waveform
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 import numpy as np
+from comm.serial_comm import PacemakerSerial
 
 class DCMMainInterface:
     # Define parameter ranges for validation
@@ -105,6 +106,8 @@ class DCMMainInterface:
         self.connected_device = None
         self.connection_status = "Disconnected"
         self.last_device = None
+        # Add serial communication
+        self.pacemaker_serial = PacemakerSerial()
         
         # Initialize parameters
         self.create_main_interface()
@@ -505,32 +508,83 @@ class DCMMainInterface:
     # Device control methods
     
     def connect_device(self):
-        # Connect to simulated device (Requirement 4)
-        device_id = f"PM-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        self.connected_device = device_id
-        self.connection_status = "Connected"
+        """Connect to real pacemaker device via serial port"""
+        # Show port selection dialog
+        ports = self.pacemaker_serial.list_ports()
         
-        self.connection_indicator.config(fg="green")
-        self.connection_text.config(text="Connected")
-        self.device_label.config(text=device_id)
-        self.telemetry_indicator.config(fg="green")
-        self.telemetry_text.config(text="OK")
+        if not ports:
+            messagebox.showerror("Error", "No COM ports available.\nEnsure pacemaker is connected via USB.")
+            return
         
-        # Check if different device (Requirement 7)
-        if self.last_device and self.last_device != device_id:
-            self.device_warning.config(text="⚠ Different Device!")
-            self.root.after(5000, lambda: self.device_warning.config(text=""))
+        # Create port selection dialog
+        port_dialog = tk.Toplevel(self.root)
+        port_dialog.title("Select COM Port")
+        port_dialog.geometry("450x250")
+        port_dialog.transient(self.root)
+        port_dialog.grab_set()
         
-        self.last_device = device_id
-        messagebox.showinfo("Connected", f"Connected to device:\n{device_id}")
+        ttk.Label(port_dialog, text="Select pacemaker COM port:", 
+                font=("Arial", 10, "bold")).pack(pady=10)
+        
+        port_var = tk.StringVar()
+        port_list = ttk.Combobox(port_dialog, textvariable=port_var, 
+                                values=[f"{p[0]} - {p[1]}" for p in ports],
+                                state="readonly", width=50)
+        port_list.pack(pady=10)
+        if ports:
+            port_list.current(0)
+        
+        status_label = ttk.Label(port_dialog, text="", foreground="blue")
+        status_label.pack(pady=5)
     
+        def do_connect():
+            selected = port_var.get()
+            if not selected:
+                messagebox.showwarning("Warning", "Please select a COM port")
+                return
+                
+            port_name = selected.split(' - ')[0]
+            status_label.config(text="Connecting...", foreground="blue")
+            port_dialog.update()
+            
+            success, result = self.pacemaker_serial.connect(port_name)
+            
+            if success:
+                self.connected_device = result
+                self.connection_status = "Connected"
+                self.connection_indicator.config(fg="green")
+                self.connection_text.config(text="Connected")
+                self.device_label.config(text=result)
+                self.telemetry_indicator.config(fg="green")
+                self.telemetry_text.config(text="OK")
+                
+                # Check for different device (Requirement 7)
+                if self.last_device and self.last_device != result:
+                    self.device_warning.config(text="⚠ Different Device!")
+                    self.root.after(5000, lambda: self.device_warning.config(text=""))
+                
+                self.last_device = result
+                port_dialog.destroy()
+                messagebox.showinfo("Connected", f"Connected to device:\n{result}\nPort: {port_name}")
+            else:
+                status_label.config(text=f"Connection failed: {result}", foreground="red")
+                messagebox.showerror("Connection Failed", f"Failed to connect:\n{result}")
+        
+            button_frame = ttk.Frame(port_dialog)
+            button_frame.pack(pady=10)
+            ttk.Button(button_frame, text="Connect", command=do_connect).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="Cancel", command=port_dialog.destroy).pack(side=tk.LEFT, padx=5)
+            
     def disconnect_device(self):
-        # Disconnect from device
+        """Disconnect from pacemaker"""
+        self.pacemaker_serial.disconnect()
         self.connection_status = "Disconnected"
+        self.connected_device = None
         self.connection_indicator.config(fg="red")
         self.connection_text.config(text="Disconnected")
         self.telemetry_indicator.config(fg="gray")
         self.telemetry_text.config(text="N/A")
+        self.device_label.config(text="None")
         messagebox.showinfo("Disconnected", "Device disconnected")
     
     def simulate_telemetry_loss(self, reason):
@@ -570,36 +624,97 @@ class DCMMainInterface:
         self.root.after(5000, lambda: self.device_warning.config(text=""))
     
     def interrogate_device(self):
-        # Interrogate device for parameters
-        if self.connection_status != "Connected":
+        """Read parameters from connected pacemaker"""
+        if not self.pacemaker_serial.connected:
             messagebox.showwarning("Warning", "Please connect to a device first")
             return
-        messagebox.showinfo("Interrogate", "Device parameters retrieved successfully")
+        
+        # Show progress
+        progress = tk.Toplevel(self.root)
+        progress.title("Interrogating Device")
+        progress.geometry("300x100")
+        progress.transient(self.root)
+        progress.grab_set()
+        ttk.Label(progress, text="Reading parameters from device...", 
+                font=("Arial", 10)).pack(pady=20)
+        progress_bar = ttk.Progressbar(progress, mode='indeterminate')
+        progress_bar.pack(pady=10, padx=20, fill=tk.X)
+        progress_bar.start()
+        progress.update()
+        
+        success, result = self.pacemaker_serial.interrogate_device(self.current_mode)
+        
+        progress_bar.stop()
+        progress.destroy()
+        
+        if success:
+            # Update GUI with retrieved parameters
+            for param_key, value in result.items():
+                if param_key in self.parameter_entries:
+                    self.parameter_entries[param_key].delete(0, tk.END)
+                    self.parameter_entries[param_key].insert(0, str(value))
+                    # Also update internal data
+                    self.current_parameters[param_key] = value
+                    self.current_json_data[self.current_mode][param_key] = value
+            
+            messagebox.showinfo("Success", 
+                            f"Device parameters retrieved successfully for {self.current_mode} mode")
+        else:
+            messagebox.showerror("Error", f"Failed to interrogate device:\n{result}")
     
     def program_parameters(self):
-        # Program parameters to device
-        if self.connection_status != "Connected":
+        """Program parameters to connected pacemaker"""
+        if not self.pacemaker_serial.connected:
             messagebox.showwarning("Warning", "Please connect to a device first")
             return
         
         # Validate parameters before programming
         errors = self.validate_all_parameters()
         if errors:
-            messagebox.showerror("Validation Error", 
-                               "Cannot program parameters:\n\n" + "\n".join(errors))
+            messagebox.showerror("Validation Error",
+                            "Cannot program parameters:\n\n" + "\n".join(errors))
             return
         
-        if messagebox.askyesno("Program Device", 
-                              f"Program these {self.current_mode} parameters to the connected device?\n\n"
-                              "This will update the pacemaker settings."):
-            # In Deliverable 2, this would send parameters via serial communication
-            # For now, just simulate success
-            messagebox.showinfo("Success", 
-                              f"Parameters programmed successfully to device:\n{self.connected_device}\n\n"
-                              "Mode: " + self.current_mode)
-            
-            # Auto-save to DCM after successful programming (good practice)
+        if not messagebox.askyesno("Program Device",
+                                f"Program these {self.current_mode} parameters to the connected device?\n\n"
+                                "This will update the pacemaker settings."):
+            return
+        
+        # Collect parameters
+        parameters = {}
+        for key, entry in self.parameter_entries.items():
+            try:
+                parameters[key] = float(entry.get())
+            except ValueError:
+                messagebox.showerror("Error", f"Invalid value for {key}")
+                return
+        
+        # Show progress
+        progress = tk.Toplevel(self.root)
+        progress.title("Programming Device")
+        progress.geometry("300x100")
+        progress.transient(self.root)
+        progress.grab_set()
+        ttk.Label(progress, text="Programming parameters to device...", 
+                font=("Arial", 10)).pack(pady=20)
+        progress_bar = ttk.Progressbar(progress, mode='indeterminate')
+        progress_bar.pack(pady=10, padx=20, fill=tk.X)
+        progress_bar.start()
+        progress.update()
+        
+        # Send to device
+        success, message = self.pacemaker_serial.program_parameters(self.current_mode, parameters)
+        
+        progress_bar.stop()
+        progress.destroy()
+        
+        if success:
+            messagebox.showinfo("Success",
+                            f"{message}\n\nDevice: {self.connected_device}\nMode: {self.current_mode}")
+            # Auto-save to DCM after successful programming
             self.save_parameters_silent()
+        else:
+            messagebox.showerror("Programming Failed", message)
     
     def reset_to_nominal(self):
         # Reset parameters to nominal values for current mode

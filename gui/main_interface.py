@@ -339,44 +339,59 @@ class DCMMainInterface:
 
     # Function to plot waveform
     def plot_waveform(self):
-        if self.lead_type == "Atrial Lead" or self.lead_type == "Ventricular Lead":
+        self.ax.clear()
+
+        # --- Case 1: Atrial Lead ONLY ---
+        if self.lead_type == "Atrial Lead":
             filepath = self.paths["LEAD_WAVFRM_DCM"]
+            data = get_ecg_waveform(filepath, "Atrial Lead")
+            data = np.array(data, dtype=float)
+            self.ax.plot(data, color="red", label="Atrial")
+            ymin, ymax = np.min(data), np.max(data)
+
+        # --- Case 2: Ventricular Lead ONLY ---
+        elif self.lead_type == "Ventricular Lead":
+            filepath = self.paths["LEAD_WAVFRM_DCM"]
+            data = get_ecg_waveform(filepath, "Ventricular Lead")
+            data = np.array(data, dtype=float)
+            self.ax.plot(data, color="blue", label="Ventricular")
+            ymin, ymax = np.min(data), np.max(data)
+
+        # --- CASE 3: SURFACE LEAD = ATRIAL + VENTRICULAR OVERLAID ---
         elif self.lead_type == "Surface Lead":
-            filepath = self.paths["SURFACE_ECG_DCM"]
+            filepath = self.paths["LEAD_WAVFRM_DCM"]
+
+            atr = np.array(get_ecg_waveform(filepath, "Atrial Lead"), dtype=float)
+            vent = np.array(get_ecg_waveform(filepath, "Ventricular Lead"), dtype=float)
+
+            # Plot both
+            self.ax.plot(atr, color="red", label="Atrial")
+            self.ax.plot(vent, color="blue", label="Ventricular")
+
+            # combined limits
+            ymin = min(np.min(atr), np.min(vent))
+            ymax = max(np.max(atr), np.max(vent))
+
         else:
             return
-        
-        data = get_ecg_waveform(filepath, self.lead_type)
-        print(f"{self.lead_type}: dtype={data.dtype}, min={np.min(data)}, max={np.max(data)}, len={len(data)}")
-        
-        # ensure data is numeric
-        if data is None or len(data) == 0:
-            self.ax.clear()
-            self.ax.set_title(f"{self.lead_type} Waveform")
-            self.ax.set_xlabel("Sample #")
-            self.ax.set_ylabel("Amplitude")
-            self.ax.text(0.5, 0.5, "No Data", transform=self.ax.transAxes,
-                        ha='center', va='center', fontsize=12, color='gray')
-            self.canvas.draw()
-            return
 
-        data = np.array(data, dtype=float)  # <-- Convert to numeric
-        self.ax.clear()
-        self.ax.plot(data, color='red')
-        self.ax.set_title(f"{self.lead_type} Waveform")
-        self.ax.set_xlabel("Sample #")
-        self.ax.set_ylabel("Amplitude")
-
-        ymin, ymax = np.min(data), np.max(data)
+        # Apply y-limits with padding
         if ymin == ymax:
             pad = 0.1 if ymin == 0 else abs(ymin) * 0.1
             ymin, ymax = ymin - pad, ymax + pad
         else:
             yrange = ymax - ymin
-            ymin -= 0.1 * yrange
-            ymax += 0.1 * yrange
+            ymin -= yrange * 0.1
+            ymax += yrange * 0.1
+
         self.ax.set_ylim(ymin, ymax)
-        self.ax.set_xlim(0, len(data))
+        self.ax.set_xlim(0, max(len(atr) if 'atr' in locals() else 0,
+                                 len(vent) if 'vent' in locals() else 0))
+
+        self.ax.set_title(f"{self.lead_type} Waveform")
+        self.ax.set_xlabel("Sample #")  
+        self.ax.set_ylabel("Amplitude")
+        self.ax.legend(loc="upper right")
 
         self.canvas.draw()
     

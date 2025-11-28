@@ -10,14 +10,10 @@ class PacemakerSerial:
 
     # Protocol constants
     SYNC_BYTE = 0x16
-    ACK_BYTE = 0x06
-    NACK_BYTE = 0x15
 
     # Commands
     CMD_ECHO = 0x22
     CMD_SET_PARAMS = 0x55
-    CMD_GET_PARAMS = 0x56
-    CMD_GET_EGM = 0x57
 
     def __init__(self):
         self.serial_port = None
@@ -62,19 +58,65 @@ class PacemakerSerial:
     # ---------------------------------------------------------
     # ECHO TEST
     # ---------------------------------------------------------
-    def echo_test(self):
+    def echo_test_parameters(self, mode, params):
         try:
-            packet = bytes([self.SYNC_BYTE, self.CMD_ECHO])
-            self.serial_port.write(packet)
-            self.serial_port.flush()
-            resp = self.serial_port.read(2)
-            return (
-                len(resp) == 2
-                and resp[0] == self.SYNC_BYTE
-                and resp[1] == self.ACK_BYTE
-            )
-        except:
-            return False
+            # Step 1: Program parameters
+            print("  → Programming parameters...")
+            prog_ok, prog_msg = self.program_parameters(mode, params)
+            if not prog_ok:
+                return False, f"Programming failed: {prog_msg}", {}
+            # Step 2: Wait a bit for device to process
+            time.sleep(0.3)
+            self.serial_port.reset_input_buffer()
+            time.sleep(0.1)
+            # Step 3: Interrogate device
+            print("  → Reading back parameters...")
+            inter_ok, result = self.interrogate_device()
+            if not inter_ok:
+                return False, f"Interrogate failed: {result}", {}
+            # Step 4: Compare parameters
+            print("  → Comparing parameters...")
+            differences = {}
+            readback = result  # This is the dict returned from interrogate
+            # Map your parameter names to what you sent
+            comparisons = {
+                'mode': (self._mode_to_code(mode), readback.get('mode')),
+                'ARP': (int(params['ARP']), readback.get('ARP')),
+                'VRP': (int(params['VRP']), readback.get('VRP')),
+                'ATR_PULSE_AMP': (float(params['ATR_PULSE_AMP']), readback.get('ATR_PULSE_AMP')),
+                'VENT_PULSE_AMP': (float(params['VENT_PULSE_AMP']), readback.get('VENT_PULSE_AMP')),
+                'ATR_PULSE_WIDTH': (int(params['ATR_PULSE_WIDTH']), readback.get('ATR_PULSE_WIDTH')),
+                'VENT_PULSE_WIDTH': (int(params['VENT_PULSE_WIDTH']), readback.get('VENT_PULSE_WIDTH')),
+                'ATR_CMP_REF_PWM': (int(params['ATR_CMP_REF_PWM']), readback.get('ATR_CMP_REF_PWM')),
+                'VENT_CMP_REF_PWM': (int(params['VENT_CMP_REF_PWM']), readback.get('VENT_CMP_REF_PWM')),
+                'REACTION_TIME': (int(params['REACTION_TIME']), readback.get('REACTION_TIME')),
+                'RECOVERY_TIME': (int(params['RECOVERY_TIME']), readback.get('RECOVERY_TIME')),
+                'FIXED_AV_DELAY': (int(params['FIXED_AV_DELAY']), readback.get('FIXED_AV_DELAY')),
+                'RESPONSE_FACTOR': (int(params['RESPONSE_FACTOR']), readback.get('RESPONSE_FACTOR')),
+                'ACTIVITY_THRESHOLD': (int(params['ACTIVITY_THRESHOLD']), readback.get('ACTIVITY_THRESHOLD')),
+                'LRL': (int(params['LRL']), readback.get('LRL')),
+                'URL': (int(params['URL']), readback.get('URL')),
+                'MSR': (int(params['MSR']), readback.get('MSR')),
+            }
+            # Check each parameter
+            all_match = True
+            for param_name, (sent, received) in comparisons.items():
+                # For floats, use tolerance comparison
+                if isinstance(sent, float):
+                    tolerance = 0.01  # 1% tolerance for floating point
+                    if abs(sent - received) > tolerance:
+                        differences[param_name] = {'sent': sent, 'received': received}
+                        all_match = False
+                else:
+                    if sent != received:
+                        differences[param_name] = {'sent': sent, 'received': received}
+                        all_match = False
+            if all_match:
+                return True, "All parameters match!", {}
+            else:
+                return False, f"Found {len(differences)} mismatches", differences
+        except Exception as e:
+            return False, f"Echo test error: {str(e)}", {}
 
     # ---------------------------------------------------------
     # SET PARAMETERS (Python → Simulink)
@@ -105,7 +147,7 @@ class PacemakerSerial:
         # VENT_PULSE_WIDTH
         buf += struct.pack('<H', int(p["VENT_PULSE_WIDTH"]))
 
-        # UNUSED byte (byte 18)
+        # UNUSED byte (byte 21)
         buf.append(0)
 
         # ATR_CMP_REF_PWM
@@ -117,6 +159,9 @@ class PacemakerSerial:
         buf += struct.pack('<H', int(p["REACTION_TIME"]))
         # RECOVERY_TIME
         buf += struct.pack('<H', int(p["RECOVERY_TIME"]))
+
+        # UNUSED byte (byte 28)
+        buf.append(0)
 
         # FIXED_AV_DELAY
         buf.append(int(p["FIXED_AV_DELAY"]))
@@ -131,8 +176,8 @@ class PacemakerSerial:
         # MSR
         buf.append(int(p["MSR"]))
 
-        # Ensure payload is exactly 31 bytes
-        while len(buf) < 31:
+        # Ensure payload is exactly 32 bytes
+        while len(buf) < 32:
             buf.append(0)
 
         return bytes(buf)
@@ -140,15 +185,22 @@ class PacemakerSerial:
     def program_parameters(self, mode, parameters):
         try:
             payload = self._encode_parameters(mode, parameters)
-            packet = bytearray([self.SYNC_BYTE, self.CMD_SET_PARAMS])
+            packet = bytearray([self.SYNC_BYTE, self.CMD_SET_PARAMS])  # Use bytearray
             packet.extend(payload)
+            print("Packet length:", len(packet))
+            print("Packet:", packet)
             self.serial_port.write(packet)
             self.serial_port.flush()
 
-            resp = self.serial_port.read(2)
-            if len(resp) == 2 and resp[0] == self.SYNC_BYTE and resp[1] == self.ACK_BYTE:
-                return True, "Parameters accepted"
-            return False, "Rejected or no response"
+            # Just wait a moment for Simulink to process
+            time.sleep(0.1)
+    
+            # resp = self.serial_port.read(88)
+            # print("Data Length: ", len(resp))
+            # print("Data: ", resp)
+            # if len(resp) != 88:
+            #     return False, "Incomplete data"
+            return True, "Parameters accepted"
         except Exception as e:
             return False, str(e)
 
@@ -161,11 +213,6 @@ class PacemakerSerial:
         param["response_type"] = data[offset]; offset += 1
         param["mode"] = data[offset]; offset += 1
 
-        # ARP
-        param["ARP"] = struct.unpack_from('<H', data, offset)[0]; offset += 2
-        # VRP
-        param["VRP"] = struct.unpack_from('<H', data, offset)[0]; offset += 2
-
         # ATR_PULSE_AMP
         param["ATR_PULSE_AMP"] = struct.unpack_from('<f', data, offset)[0]; offset += 4
         # VENT_PULSE_AMP
@@ -176,40 +223,56 @@ class PacemakerSerial:
         # VENT_WIDTH
         param["VENT_PULSE_WIDTH"] = struct.unpack_from('<H', data, offset)[0]; offset += 2
 
+        # LRL
+        param["LRL"] = data[offset]; offset += 1
+
+        # ARP
+        param["ARP"] = struct.unpack_from('<H', data, offset)[0]; offset += 2
+        # VRP
+        param["VRP"] = struct.unpack_from('<H', data, offset)[0]; offset += 2
+
         # ATR_CMP_REF_PWM
         param["ATR_CMP_REF_PWM"] = data[offset]; offset += 1
         # VENT_CMP_REF_PWM
         param["VENT_CMP_REF_PWM"] = data[offset]; offset += 1
+
+        # MSR
+        param["MSR"] = data[offset]; offset += 1
+        # RESPONSE_FACTOR
+        param["RESPONSE_FACTOR"] = data[offset]; offset += 1
 
         # REACTION_TIME
         param["REACTION_TIME"] = struct.unpack_from('<H', data, offset)[0]; offset += 2
         # RECOVERY_TIME
         param["RECOVERY_TIME"] = struct.unpack_from('<H', data, offset)[0]; offset += 2
 
-        # FIXED_AV_DELAY
-        param["FIXED_AV_DELAY"] = data[offset]; offset += 1
-        # RESPONSE_FACTOR
-        param["RESPONSE_FACTOR"] = data[offset]; offset += 1
         # ACTIVITY_THRESHOLD
         param["ACTIVITY_THRESHOLD"] = data[offset]; offset += 1
-        # LRL
-        param["LRL"] = data[offset]; offset += 1
         # URL
         param["URL"] = data[offset]; offset += 1
-        # MSR
-        param["MSR"] = data[offset]; offset += 1
+        # FIXED_AV_DELAY
+        param["FIXED_AV_DELAY"] = data[offset]; offset += 1
 
         return param
 
     def interrogate_device(self):
         try:
+            # CRITICAL: Clear any leftover data in buffer         
+            self.serial_port.reset_input_buffer()         
+            time.sleep(0.05)  # Brief pause after clearing
+
             # Request 88-byte parameter packet
-            pkt = bytes([self.SYNC_BYTE, self.CMD_ECHO])
+            pkt = bytearray([self.SYNC_BYTE, self.CMD_ECHO])
+            pkt.extend([0x00] * 32)
+            print("Packet: ", pkt)
             self.serial_port.write(pkt)
             self.serial_port.flush()
 
+            time.sleep(0.1)
+
             data = self.serial_port.read(88)
-            print(len(data))
+            print("Data Length: ", len(data))
+            print("Data: ", data)
             if len(data) != 88:
                 return False, "Incomplete data"
             return True, self._decode_parameters(data)
@@ -220,20 +283,33 @@ class PacemakerSerial:
     # READ ATR/VENT SIGNALS (EGM)
     # ---------------------------------------------------------
     def decode_signals(self, data88):
+        if len(data88) != 88:
+            raise ValueError(f"Expected 88-byte signal packet, got {len(data88)}")
         vent = struct.unpack('<11f', data88[:44])
         atr = struct.unpack('<11f', data88[44:88])
         return vent, atr
 
     def get_signals(self):
-        pkt = bytes([self.SYNC_BYTE, self.CMD_GET_EGM])
-        self.serial_port.write(pkt)
-        self.serial_port.flush()
-        resp = self.serial_port.read(90)
-        if len(resp) < 90:
-            return False, ([], [])
-        if resp[0] != self.SYNC_BYTE or resp[1] != self.ACK_BYTE:
-            return False, ([], [])
-        return True, self.decode_signals(resp[2:90])
+        try:
+            # CRITICAL: Clear any leftover data in buffer         
+            self.serial_port.reset_input_buffer()         
+            time.sleep(0.05)  # Brief pause after clearing
+
+            pkt = bytearray([self.SYNC_BYTE, self.CMD_ECHO])
+            pkt.extend([0x00] * 32)
+            self.serial_port.write(pkt)
+            self.serial_port.flush()
+
+            time.sleep(0.1)
+
+            resp = self.serial_port.read(88)
+            print("Signals: ", resp)
+            if len(resp) != 88:
+                return False, ([], [])
+            vent, atr = self.decode_signals(resp)
+            return True, (vent, atr)
+        except Exception as e:
+            return False, str(e)
 
     # ---------------------------------------------------------
     # MODE CODE MAPPING

@@ -1,6 +1,7 @@
 # gui/main_interface.py
 import tkinter as tk
 from tkinter import ttk, messagebox
+import time
 import json
 import os
 from datetime import datetime
@@ -570,10 +571,10 @@ class DCMMainInterface:
                 status_label.config(text=f"Connection failed: {result}", foreground="red")
                 messagebox.showerror("Connection Failed", f"Failed to connect:\n{result}")
         
-            button_frame = ttk.Frame(port_dialog)
-            button_frame.pack(pady=10)
-            ttk.Button(button_frame, text="Connect", command=do_connect).pack(side=tk.LEFT, padx=5)
-            ttk.Button(button_frame, text="Cancel", command=port_dialog.destroy).pack(side=tk.LEFT, padx=5)
+        button_frame = ttk.Frame(port_dialog)
+        button_frame.pack(pady=10)
+        ttk.Button(button_frame, text="Connect", command=do_connect).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=port_dialog.destroy).pack(side=tk.LEFT, padx=5)
             
     def disconnect_device(self):
         """Disconnect from pacemaker"""
@@ -642,7 +643,7 @@ class DCMMainInterface:
         progress_bar.start()
         progress.update()
         
-        success, result = self.pacemaker_serial.interrogate_device(self.current_mode)
+        success, result = self.pacemaker_serial.interrogate_device()
         
         progress_bar.stop()
         progress.destroy()
@@ -709,6 +710,7 @@ class DCMMainInterface:
         progress.destroy()
         
         if success:
+            time.sleep(0.3)
             messagebox.showinfo("Success",
                             f"{message}\n\nDevice: {self.connected_device}\nMode: {self.current_mode}")
             # Auto-save to DCM after successful programming

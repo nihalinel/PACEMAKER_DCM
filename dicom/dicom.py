@@ -178,8 +178,8 @@ def get_ecg_waveform(filepath, label):
         data = ds.WaveformSequence[0].WaveformData
     elif label == "Ventricular Lead":
         data = ds.WaveformSequence[1].WaveformData
-    elif label == "Surface Lead":
-        data = ds.WaveformSequence[0].WaveformData
+    # elif label == "Surface Lead":
+    #     data = ds.WaveformSequence[0].WaveformData
     else:
         raise ValueError(f"Unknown lead_label: {label}")
     
@@ -206,8 +206,8 @@ def set_ecg_waveform(filepath, label, data):
         ds.WaveformSequence[0].WaveformData = data_bytes
     elif label == "Ventricular Lead":
         ds.WaveformSequence[1].WaveformData = data_bytes
-    elif label == "Surface Lead":
-        ds.WaveformSequence[0].WaveformData = data_bytes
+    # elif label == "Surface Lead":
+    #     ds.WaveformSequence[0].WaveformData = data_bytes
     else:
         raise ValueError(f"Unknown lead_label: {label}")
     

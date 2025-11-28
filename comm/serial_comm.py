@@ -1,4 +1,4 @@
-# comm/serial_comm.py
+    # comm/serial_comm.py
 import serial
 import serial.tools.list_ports
 import struct
@@ -6,7 +6,7 @@ import time
 
 
 class PacemakerSerial:
-    """Handles serial communication with FRDM-K64F pacemaker"""
+    ''' Handles serial communication with FRDM-K64F pacemaker '''
 
     # Protocol constants
     SYNC_BYTE = 0x16
@@ -20,9 +20,7 @@ class PacemakerSerial:
         self.connected = False
         self.device_id = None
 
-    # ---------------------------------------------------------
-    # PORT FUNCTIONS
-    # ---------------------------------------------------------
+    ''' PORT FUNCTIONS '''
     def list_ports(self):
         ports = serial.tools.list_ports.comports()
         return [(p.device, p.description) for p in ports]
@@ -55,9 +53,7 @@ class PacemakerSerial:
         self.serial_port = None
         self.connected = False
 
-    # ---------------------------------------------------------
-    # ECHO TEST
-    # ---------------------------------------------------------
+    ''' ECHO TEST '''
     def echo_test_parameters(self, mode, params):
         try:
             # Step 1: Program parameters
@@ -77,8 +73,9 @@ class PacemakerSerial:
             # Step 4: Compare parameters
             print("  → Comparing parameters...")
             differences = {}
-            readback = result  # This is the dict returned from interrogate
-            # Map your parameter names to what you sent
+            readback = result
+            
+            # Map parameter names
             comparisons = {
                 'mode': (self._mode_to_code(mode), readback.get('mode')),
                 'ARP': (int(params['ARP']), readback.get('ARP')),
@@ -98,10 +95,11 @@ class PacemakerSerial:
                 'URL': (int(params['URL']), readback.get('URL')),
                 'MSR': (int(params['MSR']), readback.get('MSR')),
             }
+            
             # Check each parameter
             all_match = True
             for param_name, (sent, received) in comparisons.items():
-                # For floats, use tolerance comparison
+                # use tolerance comparison for floats
                 if isinstance(sent, float):
                     tolerance = 0.01  # 1% tolerance for floating point
                     if abs(sent - received) > tolerance:
@@ -118,11 +116,11 @@ class PacemakerSerial:
         except Exception as e:
             return False, f"Echo test error: {str(e)}", {}
 
-    # ---------------------------------------------------------
-    # SET PARAMETERS (Python → Simulink)
-    # Payload = 31 bytes, mapped according to your final spec
-    # Full packet = [0x16, 0x55] + payload = 34 bytes
-    # ---------------------------------------------------------
+    '''
+    SET PARAMETERS (Python -> Simulink)
+    Payload = 31 bytes, mapped according to your final spec
+    Full packet = [0x16, 0x55] + payload = 34 bytes
+    '''
     def _encode_parameters(self, mode, p):
         buf = bytearray()
 
@@ -192,7 +190,7 @@ class PacemakerSerial:
             self.serial_port.write(packet)
             self.serial_port.flush()
 
-            # Just wait a moment for Simulink to process
+            # add delay for Simulink to process
             time.sleep(0.1)
     
             # resp = self.serial_port.read(88)
@@ -204,9 +202,8 @@ class PacemakerSerial:
         except Exception as e:
             return False, str(e)
 
-    # ---------------------------------------------------------
-    # INTERROGATE DEVICE (Simulink → Python, 88-byte always)
-    # ---------------------------------------------------------
+    ''' INTERROGATE DEVICE (Simulink -> Python, 88-byte always) '''
+    
     def _decode_parameters(self, data):
         param = {}
         offset = 0
@@ -257,9 +254,9 @@ class PacemakerSerial:
 
     def interrogate_device(self):
         try:
-            # CRITICAL: Clear any leftover data in buffer         
+            # Clear any leftover data in buffer         
             self.serial_port.reset_input_buffer()         
-            time.sleep(0.05)  # Brief pause after clearing
+            time.sleep(0.05)  # add delay after clearing
 
             # Request 88-byte parameter packet
             pkt = bytearray([self.SYNC_BYTE, self.CMD_ECHO])
@@ -279,9 +276,7 @@ class PacemakerSerial:
         except Exception as e:
             return False, str(e)
 
-    # ---------------------------------------------------------
-    # READ ATR/VENT SIGNALS (EGM)
-    # ---------------------------------------------------------
+    ''' READ ATR/VENT SIGNALS (EGM) '''
     def decode_signals(self, data88):
         if len(data88) != 88:
             raise ValueError(f"Expected 88-byte signal packet, got {len(data88)}")
@@ -291,9 +286,9 @@ class PacemakerSerial:
 
     def get_signals(self):
         try:
-            # CRITICAL: Clear any leftover data in buffer         
+            # Clear any leftover data in buffer         
             self.serial_port.reset_input_buffer()         
-            time.sleep(0.05)  # Brief pause after clearing
+            time.sleep(0.05)  # add delay after clearing
 
             pkt = bytearray([self.SYNC_BYTE, self.CMD_ECHO])
             pkt.extend([0x00] * 32)
@@ -311,9 +306,7 @@ class PacemakerSerial:
         except Exception as e:
             return False, str(e)
 
-    # ---------------------------------------------------------
-    # MODE CODE MAPPING
-    # ---------------------------------------------------------
+    ''' MODE CODE MAPPING '''
     def _mode_to_code(self, mode):
         mapping = {
             "AOO": 1, "VOO": 2, "AAI": 3, "VVI": 4,

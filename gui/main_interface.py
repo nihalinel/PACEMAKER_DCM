@@ -11,8 +11,81 @@ import matplotlib.pyplot as plt
 import numpy as np
 from comm.serial_comm import PacemakerSerial
 
+class ActivityThresholdWrapper:
+    """
+    Wrapper class that makes Activity Threshold dropdown behave like an Entry widget.
+    This allows consistent interface for reading/writing parameter values.
+    """
+    def __init__(self, string_var, combobox):
+        self.var = string_var
+        self.combobox = combobox
+
+ 
+    
+    def get(self):
+        """Return the current dropdown value (string like 'Med')"""
+        return self.var.get()
+    
+    def delete(self, start, end):
+        """Clear the value (for consistency with Entry interface)"""
+        pass  # Combobox doesn't need this
+    
+    def insert(self, index, value):
+        """Set the dropdown value"""
+        if value in DCMMainInterface.ACTIVITY_THRESHOLD_OPTIONS:
+            self.var.set(value)
+        else:
+            self.var.set("Med")  # Default fallback
+
+
 class DCMMainInterface:
-    # Define parameter ranges for validation
+    
+    # PARAMETER MAPPINGS (GUI <-> Serial Protocol)
+    GUI_TO_SERIAL_MAPPING = {
+        "Lower Rate Limit": "LRL",
+        "Upper Rate Limit": "URL",
+        "Maximum Sensor Rate": "MSR",
+        "Atrial Amplitude": "ATR_PULSE_AMP",
+        "Ventricular Amplitude": "VENT_PULSE_AMP",
+        "Atrial Pulse Width": "ATR_PULSE_WIDTH",
+        "Ventricular Pulse Width": "VENT_PULSE_WIDTH",
+        "Atrial Sensitivity": "ATR_CMP_REF_PWM",
+        "Ventricular Sensitivity": "VENT_CMP_REF_PWM",
+        "ARP": "ARP",
+        "VRP": "VRP",
+        "Reaction Time": "REACTION_TIME",
+        "Response Factor": "RESPONSE_FACTOR",
+        "Recovery Time": "RECOVERY_TIME",
+        "Activity Threshold": "ACTIVITY_THRESHOLD",
+    }
+
+    # Reverse mapping for interrogate (serial -> GUI)
+    SERIAL_TO_GUI_MAPPING = {v: k for k, v in GUI_TO_SERIAL_MAPPING.items()}
+    
+    # Activity Threshold dropdown values
+    # Maps display string to float value for serial protocol
+    ACTIVITY_THRESHOLD_OPTIONS = ["V-Low", "Low", "Med-Low", "Med", "Med-High", "High", "V-High"]
+    ACTIVITY_THRESHOLD_TO_FLOAT = {
+        "V-Low": 1.05,
+        "Low": 1.1,
+        "Med-Low": 1.2,
+        "Med": 1.3,
+        "Med-High": 1.4,
+        "High": 1.5,
+        "V-High": 1.6
+    }
+    FLOAT_TO_ACTIVITY_THRESHOLD = {v: k for k, v in ACTIVITY_THRESHOLD_TO_FLOAT.items()}
+    
+    ''' UNIT CONVERSION CONSTANTS '''
+    
+    # Pulse Width
+    PULSE_WIDTH_MULTIPLIER = 25  # GUI_ms * 25 = serial_value
+    
+    # Sensitivity to PWM conversion
+    SENSITIVITY_PWM_BASE = 25      # PWM value at 0 mV
+    SENSITIVITY_PWM_SCALE = 23     # PWM increase per mV (so 10mV -> 255)
+    
+    # PARAMETER RANGES AND DEFINITIONS
     PARAMETER_RANGES = {
         "Lower Rate Limit": (30, 175),
         "Upper Rate Limit": (50, 175),
@@ -28,7 +101,6 @@ class DCMMainInterface:
         "PVARP": (150, 500),
         "Hysteresis": (30, 175),
         "Rate Smoothing": (0, 25),
-        # "Activity Threshold": ["V-Low", "Low", "Med-Low", "Med", "Med-High", "High", "V-High"],
         "Reaction Time": (10, 50),
         "Response Factor": (1, 16),
         "Recovery Time": (2, 16),
@@ -43,15 +115,15 @@ class DCMMainInterface:
         "VVI" : ["Lower Rate Limit", "Upper Rate Limit", "Ventricular Amplitude", "Ventricular Pulse Width",
                 "Ventricular Sensitivity", "VRP", "Hysteresis", "Rate Smoothing"],
         "AOOR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Atrial Amplitude", "Atrial Pulse Width", 
-                 "Reaction Time", "Response Factor", "Recovery Time"],
+                 "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
         "VOOR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Ventricular Amplitude", "Ventricular Pulse Width", 
-                 "Reaction Time", "Response Factor", "Recovery Time"],
+                 "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
         "AAIR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Atrial Amplitude", "Atrial Pulse Width",
                 "Atrial Sensitivity", "ARP", "PVARP", "Hysteresis", "Rate Smoothing", 
-                "Reaction Time", "Response Factor", "Recovery Time"],
+                "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
         "VVIR": ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate", "Ventricular Amplitude", "Ventricular Pulse Width",
                 "Ventricular Sensitivity", "VRP", "Hysteresis", "Rate Smoothing", 
-                "Reaction Time", "Response Factor", "Recovery Time"],
+                "Activity Threshold", "Reaction Time", "Response Factor", "Recovery Time"],
     }
     
     # Parameter display names
@@ -70,11 +142,107 @@ class DCMMainInterface:
         "PVARP": ("PVARP (ms)", "ms"),
         "Hysteresis": ("Hysteresis (ppm)", "ppm"),
         "Rate Smoothing": ("Rate Smoothing (%)", "%"),
+        "Activity Threshold": ("Activity Threshold", ""),
         "Reaction Time": ("Reaction Time (s)", "s"),
         "Response Factor": ("Response Factor", ""),
-        "Recovery Time": ("Recovery Time", "min"),
-        #"Activity Threshold": ("Activity Threshold", ""),
+        "Recovery Time": ("Recovery Time (min)", "min"),
     }
+    
+    ''' UNIT CONVERSION METHODS '''
+    
+    def _convert_gui_to_serial(self, gui_key, gui_value):
+        """
+        Convert GUI parameter values to serial protocol values.
+        Handles unit conversions between human-readable GUI and device protocol.
+        """
+        if gui_key == "Activity Threshold":
+            # gui_value is the string like "Med", convert to float
+            if isinstance(gui_value, str):
+                return self.ACTIVITY_THRESHOLD_TO_FLOAT.get(gui_value, 1.3)  # Default Med
+            return float(gui_value)  # Already a float from interrogate
+        
+        if gui_key in ["Atrial Pulse Width", "Ventricular Pulse Width"]:
+            # Convert ms to device units (e.g., 0.4ms -> 10)
+            return int(round(gui_value * self.PULSE_WIDTH_MULTIPLIER))
+        
+        # Sensitivity: GUI is in mV (0-10), serial expects PWM (0-255)
+        if gui_key in ["Atrial Sensitivity", "Ventricular Sensitivity"]:
+            # Linear mapping from mV to PWM
+            # Higher sensitivity (lower mV threshold) = higher PWM value
+            pwm = int(self.SENSITIVITY_PWM_BASE + (gui_value * self.SENSITIVITY_PWM_SCALE))
+            return max(0, min(255, pwm))  # Clamp to valid PWM range
+        
+        # Amplitude: GUI is in V, serial expects float - no conversion needed
+        if gui_key in ["Atrial Amplitude", "Ventricular Amplitude"]:
+            return float(gui_value)
+        
+        # Rate limits, refractory periods: direct integer pass-through
+        if gui_key in ["Lower Rate Limit", "Upper Rate Limit", "Maximum Sensor Rate",
+                       "ARP", "VRP", "Reaction Time", "Recovery Time", "Response Factor"]:
+            return int(gui_value)
+        
+        # Default: return as-is
+        return gui_value
+    
+    def _convert_serial_to_gui(self, serial_key, serial_value):
+        """
+        Convert serial protocol values back to GUI display values.
+        Reverses the unit conversions for device readback.
+        """
+        # Activity Threshold: serial is float, GUI expects string
+        if serial_key == "ACTIVITY_THRESHOLD":
+            # Find closest matching threshold value
+            if serial_value in self.FLOAT_TO_ACTIVITY_THRESHOLD:
+                return self.FLOAT_TO_ACTIVITY_THRESHOLD[serial_value]
+            # Find closest match if exact value not found
+            closest = min(self.FLOAT_TO_ACTIVITY_THRESHOLD.keys(), 
+                         key=lambda x: abs(x - serial_value))
+            return self.FLOAT_TO_ACTIVITY_THRESHOLD[closest]
+        
+        # Pulse Width: serial is integer counts, GUI expects ms
+        if serial_key in ["ATR_PULSE_WIDTH", "VENT_PULSE_WIDTH"]:
+            # Convert device units back to ms
+            return round(serial_value / self.PULSE_WIDTH_MULTIPLIER, 2)
+        
+        # Sensitivity: serial is PWM (0-255), GUI expects mV (0-10)
+        if serial_key in ["ATR_CMP_REF_PWM", "VENT_CMP_REF_PWM"]:
+            # Reverse linear mapping from PWM to mV
+            mv = (serial_value - self.SENSITIVITY_PWM_BASE) / self.SENSITIVITY_PWM_SCALE
+            return round(max(0, min(10, mv)), 2)  # Clamp to valid range
+        
+        # Amplitude: serial is float, GUI expects float - no conversion needed
+        if serial_key in ["ATR_PULSE_AMP", "VENT_PULSE_AMP"]:
+            return round(float(serial_value), 2)
+        
+        # Default: return as-is
+        return serial_value
+    
+    def _get_serial_defaults(self):
+        """
+        Get default serial parameter values for parameters not shown in current mode.
+        These match the Simulink INIT state defaults.
+        """
+        return {
+            "response_type": 1,      # 1 = parameter echo mode, 0 = signal mode
+            "ARP": 250,              # ms
+            "VRP": 320,              # ms
+            "ATR_PULSE_AMP": 3.5,    # V
+            "VENT_PULSE_AMP": 3.5,   # V
+            "ATR_PULSE_WIDTH": 10,   # device units (0.4ms * 25)
+            "VENT_PULSE_WIDTH": 10,  # device units
+            "ATR_CMP_REF_PWM": 90,   # PWM value
+            "VENT_CMP_REF_PWM": 90,  # PWM value
+            "REACTION_TIME": 30,     # seconds
+            "RECOVERY_TIME": 5,      # minutes
+            "FIXED_AV_DELAY": 150,   # ms
+            "RESPONSE_FACTOR": 8,
+            "ACTIVITY_THRESHOLD": 1.3,  # Med (float value)
+            "LRL": 60,               # ppm
+            "URL": 120,              # ppm
+            "MSR": 120,              # ppm
+        }
+    
+    ''' INITIALIZATION '''
     
     def __init__(self, root, username, patientID):
         self.root = root
@@ -107,12 +275,26 @@ class DCMMainInterface:
         self.connected_device = None
         self.connection_status = "Disconnected"
         self.last_device = None
+        
         # Add serial communication
         self.pacemaker_serial = PacemakerSerial()
+        
+        # Flag to prevent multiple rapid button clicks
+        self._programming_in_progress = False
+        self._interrogating_in_progress = False
         
         # Initialize parameters
         self.create_main_interface()
         self.current_parameters = self.load_user_parameters()
+
+        self.atrium_buffer = np.zeros(500)
+        self.vent_buffer = np.zeros(500)
+        
+        # IMPORTANT — plot the buffer, NOT a static array
+        self.atrium_curve = self.waveformPlot.plot(self.atrium_buffer, pen='r')
+        self.vent_curve = self.waveformPlot.plot(self.vent_buffer, pen='b')
+
+        self.streaming_enabled = False
 
         self.root.mainloop()
 
@@ -141,6 +323,8 @@ class DCMMainInterface:
         
         return data
     
+    ''' GUI CREATION METHODS '''
+    
     def create_main_interface(self):
         # Main container
         main_frame = ttk.Frame(self.root, padding="10")
@@ -161,25 +345,25 @@ class DCMMainInterface:
         self.create_action_buttons(main_frame)
     
     def create_status_bar(self, parent):
-        # Status bar showing connection and telemetry status (Req 4,5,6,7)
+        # Status bar showing connection and telemetry status
         status_frame = ttk.LabelFrame(parent, text="System Status", padding="5")
         status_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        # Connection indicator (Requirement 4)
+        # Connection indicator
         ttk.Label(status_frame, text="Connection:").grid(row=0, column=0, padx=5)
         self.connection_indicator = tk.Label(status_frame, text="●", font=("Arial", 16), fg="red")
         self.connection_indicator.grid(row=0, column=1)
         self.connection_text = ttk.Label(status_frame, text="Disconnected")
         self.connection_text.grid(row=0, column=2, padx=5)
         
-        # Telemetry indicator (Requirements 5, 6)
+        # Telemetry indicator
         ttk.Label(status_frame, text="Telemetry:").grid(row=0, column=3, padx=(20, 5))
         self.telemetry_indicator = tk.Label(status_frame, text="●", font=("Arial", 16), fg="gray")
         self.telemetry_indicator.grid(row=0, column=4)
         self.telemetry_text = ttk.Label(status_frame, text="N/A")
         self.telemetry_text.grid(row=0, column=5, padx=5)
         
-        # Device ID (Requirement 7)
+        # Device ID
         ttk.Label(status_frame, text="Device ID:").grid(row=0, column=6, padx=(20, 5))
         self.device_label = ttk.Label(status_frame, text="None", foreground="blue")
         self.device_label.grid(row=0, column=7, padx=5)
@@ -213,7 +397,7 @@ class DCMMainInterface:
         self.current_set_label.grid(row=0, column=5, padx=5)
     
     def create_control_panel(self, parent):
-        # Control buttons panel (Requirement 2)
+        # Control buttons panel
         control_frame = ttk.LabelFrame(parent, text="Device Controls", padding="10")
         control_frame.grid(row=2, column=0, rowspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 5))
         
@@ -235,7 +419,7 @@ class DCMMainInterface:
         
         ttk.Separator(control_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         
-        # Simulation controls (for testing requirements 5,6,7)
+        # Simulation controls (for testing)
         ttk.Label(control_frame, text="Test Indicators:", font=("Arial", 9, "bold")).pack(pady=5)
         ttk.Button(control_frame, text="Simulate Out of Range", 
                    command=lambda: self.simulate_telemetry_loss("range")).pack(fill=tk.X, pady=2)
@@ -247,7 +431,7 @@ class DCMMainInterface:
                    command=self.restore_telemetry).pack(fill=tk.X, pady=2)
     
     def create_parameter_display(self, parent):
-        # Parameter display area (Requirement 3)
+        # Parameter display area
         param_frame = ttk.LabelFrame(parent, text="Programmable Parameters", padding="10")
         param_frame.grid(row=2, column=1, sticky=(tk.W, tk.E, tk.N, tk.S))
         
@@ -270,6 +454,33 @@ class DCMMainInterface:
         
         # Display parameters for current mode
         self.display_mode_parameters()
+
+    def set_ecg_waveform(self, atrium_waveform, vent_waveform):
+        if self.streaming_enabled:
+            # When streaming, store the LIVE 500-sample buffers
+            self.stream_atrium = atrium_waveform
+            self.stream_vent = vent_waveform
+            return
+    
+        # When NOT streaming, store DICOM waveform
+        self.ecg_atrial = atrium_waveform
+        self.ecg_vent = vent_waveform
+
+    def get_ecg_waveform(self):
+        if self.streaming_enabled:
+            return self.stream_atrium, self.stream_vent
+        else:
+            return self.ecg_atrial, self.ecg_vent
+        
+    def poll_streaming_data(self):
+        atr11, vent11 = self.serial.get_signals()
+    
+        # Update rolling buffers
+        self.atrium_buffer = np.concatenate((self.atrium_buffer[11:], atr11))
+        self.vent_buffer   = np.concatenate((self.vent_buffer[11:], vent11))
+    
+        # Send 500-sample buffers into waveform system
+        self.set_ecg_waveform(self.atrium_buffer, self.vent_buffer)
 
     def create_ecg_display(self, parent):
         # ECG waveform frame
@@ -309,64 +520,184 @@ class DCMMainInterface:
                 continue
                 
             label_text, unit = self.PARAMETER_LABELS[param_key]
-            min_val, max_val = self.PARAMETER_RANGES[param_key]
             
             # Create label
             label = ttk.Label(self.scrollable_frame, text=label_text)
             label.grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
             
-            # Create entry
-            entry = ttk.Entry(self.scrollable_frame, width=15)
-            entry.grid(row=row, column=1, padx=5, pady=5)
-            
             # Ensure current_parameters exists
             if not hasattr(self, "current_parameters") or self.current_parameters is None:
                 self.current_parameters = {}
+            
+            # for Activity Threshold dropdown
+            if param_key == "Activity Threshold":
+                # Get default value
+                default_value = self.current_parameters.get(param_key, self.get_nominal_value(param_key))
+                if default_value not in self.ACTIVITY_THRESHOLD_OPTIONS:
+                    default_value = "Med"  # Fallback to nominal
+                
+                # Create StringVar and Combobox
+                var = tk.StringVar(value=default_value)
+                dropdown = ttk.Combobox(self.scrollable_frame, textvariable=var,
+                                       values=self.ACTIVITY_THRESHOLD_OPTIONS,
+                                       state="readonly", width=12)
+                dropdown.grid(row=row, column=1, padx=5, pady=5)
+                
+                # Store reference (use a wrapper that mimics Entry interface)
+                self.parameter_entries[param_key] = ActivityThresholdWrapper(var, dropdown)
+                
+                # Create range label
+                range_label = ttk.Label(self.scrollable_frame, text="[V-Low...V-High]", 
+                                       foreground="gray")
+                range_label.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+                
+                # Store widgets
+                self.parameter_widgets[param_key] = {
+                    'label': label,
+                    'entry': dropdown,
+                    'range': range_label,
+                    'var': var
+                }
+            else:
+                # Regular numeric entry
+                min_val, max_val = self.PARAMETER_RANGES[param_key]
+                
+                # Create entry
+                entry = ttk.Entry(self.scrollable_frame, width=15)
+                entry.grid(row=row, column=1, padx=5, pady=5)
 
-            # Get default value
-            default_value = self.current_parameters.get(param_key, self.get_nominal_value(param_key))
-            entry.insert(0, str(default_value))
-            
-            self.parameter_entries[param_key] = entry
-            
-            # Create range label
-            range_label = ttk.Label(self.scrollable_frame, text=f"[{min_val}-{max_val}]", 
-                                   foreground="gray")
-            range_label.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
-            
-            # Store widgets for future reference
-            self.parameter_widgets[param_key] = {
-                'label': label,
-                'entry': entry,
-                'range': range_label
-            }
+                # Get default value
+                default_value = self.current_parameters.get(param_key, self.get_nominal_value(param_key))
+                entry.insert(0, str(default_value))
+                
+                self.parameter_entries[param_key] = entry
+                
+                # Create range label
+                range_label = ttk.Label(self.scrollable_frame, text=f"[{min_val}-{max_val}]", 
+                                       foreground="gray")
+                range_label.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+                
+                # Store widgets
+                self.parameter_widgets[param_key] = {
+                    'label': label,
+                    'entry': entry,
+                    'range': range_label
+                }
 
-    # Function to plot waveform
+    def start_serial_stream(self):
+        params = self.build_programming_params()
+        params["response_type"] = 0
+        self.serial.program_device(params)
+    
+        self.streaming_enabled = True
+    
+        # Timer for streaming
+        self.stream_timer = QtCore.QTimer()
+        self.stream_timer.timeout.connect(self.read_live_waveform)
+        self.stream_timer.start(40)   # ~25 Hz or whatever you need
+
+    def read_live_waveform(self):
+        if not self.streaming_enabled:
+            return
+    
+        atrium, vent = self.serial.get_signals()
+    
+        if atrium is None:
+            return
+    
+        # Shift and append
+        self.atrium_buffer = np.concatenate((self.atrium_buffer[11:], atrium))
+        self.vent_buffer   = np.concatenate((self.vent_buffer[11:], vent))
+    
+        self.update_waveform_plot() 
+
+    def start_streaming_timer(self):
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.poll_streaming_data)
+        self.timer.start(50)     # 20 Hz update, adjust as needed
+
+    def poll_streaming_data(self):
+        if not self.streaming_enabled:
+            return
+    
+        # Try to get new samples
+        atrium_vals, vent_vals = serial_comm.get_signals()
+    
+        if atrium_vals is None:
+            return
+    
+        # Append 11 samples, remove oldest 11
+        self.atrium_buffer = np.concatenate([self.atrium_buffer[11:], atrium_vals])
+        self.ventricle_buffer = np.concatenate([self.ventricle_buffer[11:], vent_vals])
+    
+        # Update plot
+        self.update_waveform_plot()
+
+    def update_waveform_plot(self):
+        if self.waveform_dropdown.currentText() == "Atrial Lead":
+            self.atrium_curve.setData(self.atrium_buffer)
+        else:
+            self.vent_curve.setData(self.vent_buffer)
+
     def plot_waveform(self):
         if self.lead_type == "Atrial Lead" or self.lead_type == "Ventricular Lead":
             filepath = self.paths["LEAD_WAVFRM_DCM"]
+            data = get_ecg_waveform(filepath, self.lead_type)
         elif self.lead_type == "Surface Lead":
-            filepath = self.paths["SURFACE_ECG_DCM"]
-        else:
-            return
-        
-        data = get_ecg_waveform(filepath, self.lead_type)
-        print(f"{self.lead_type}: dtype={data.dtype}, min={np.min(data)}, max={np.max(data)}, len={len(data)}")
-        
-        # ensure data is numeric
-        if data is None or len(data) == 0:
+            # Load both atrial and ventricular waveforms
+            atrial_path = self.paths["LEAD_WAVFRM_DCM"]
+            ventricular_path = self.paths["LEAD_WAVFRM_DCM"]
+
+            atrial_data = get_ecg_waveform(atrial_path, "Atrial Lead")
+            ventricular_data = get_ecg_waveform(ventricular_path, "Ventricular Lead")
+
+            # Ensure proper numpy types
+            atrial_data = np.array(atrial_data, dtype=float)
+            ventricular_data = np.array(ventricular_data, dtype=float)
+
+            # Handle unequal lengths (truncate to min length)
+            min_len = min(len(atrial_data), len(ventricular_data))
+            atrial_data = atrial_data[:min_len]
+            ventricular_data = ventricular_data[:min_len]
+
+            # Plot both
             self.ax.clear()
-            self.ax.set_title(f"{self.lead_type} Waveform")
+            self.ax.plot(atrial_data, color='red', label='Atrial')
+            self.ax.plot(ventricular_data, color='blue', label='Ventricular')
+
+            self.ax.set_title("Surface Lead Waveform")
             self.ax.set_xlabel("Sample #")
             self.ax.set_ylabel("Amplitude")
-            self.ax.text(0.5, 0.5, "No Data", transform=self.ax.transAxes,
-                        ha='center', va='center', fontsize=12, color='gray')
+            self.ax.legend()
+
+            # Y-axis scaling
+            ymin = min(np.min(atrial_data), np.min(ventricular_data))
+            ymax = max(np.max(atrial_data), np.max(ventricular_data))
+            if ymin == ymax:
+                pad = 0.1 if ymin == 0 else abs(ymin) * 0.1
+                ymin, ymax = ymin - pad, ymax + pad
+            else:
+                yrange = ymax - ymin
+                ymin -= 0.1 * yrange
+                ymax += 0.1 * yrange
+
+            self.ax.set_ylim(ymin, ymax)
+            self.ax.set_xlim(0, min_len)
+
             self.canvas.draw()
             return
+        else:
+            return
 
-        data = np.array(data, dtype=float)  # <-- Convert to numeric
+        # Existing logic for Atrial / Ventricular Lead only
+        data = np.array(data, dtype=float)
         self.ax.clear()
-        self.ax.plot(data, color='red')
+
+        if self.lead_type == "Ventricular Lead":
+            self.ax.plot(data, color='blue')
+        else:
+            self.ax.plot(data, color='red')
+
         self.ax.set_title(f"{self.lead_type} Waveform")
         self.ax.set_xlabel("Sample #")
         self.ax.set_ylabel("Amplitude")
@@ -379,13 +710,15 @@ class DCMMainInterface:
             yrange = ymax - ymin
             ymin -= 0.1 * yrange
             ymax += 0.1 * yrange
+
         self.ax.set_ylim(ymin, ymax)
         self.ax.set_xlim(0, len(data))
 
         self.canvas.draw()
     
     def get_nominal_value(self, param_key):
-        # Get nominal/default value for a parameter
+        
+        # Get nominal/default value for a parameter (GUI units)
         nominal_values = {
             "Lower Rate Limit": 60,
             "Upper Rate Limit": 120,
@@ -394,32 +727,32 @@ class DCMMainInterface:
             "Atrial Pulse Width": 0.4,
             "Ventricular Amplitude": 3.5,
             "Ventricular Pulse Width": 0.4,
-            "Atrial Sensitivity": 0.75,
+            "Atrial Sensitivity": 2.5,
             "Ventricular Sensitivity": 2.5,
             "VRP": 320,
             "ARP": 250,
             "PVARP": 250,
             "Hysteresis": 60,
             "Rate Smoothing": 0,
+            "Activity Threshold": "Med",
             "Reaction Time": 30,
             "Response Factor": 8,
             "Recovery Time": 5,
         }
         return nominal_values.get(param_key, 0)
     
+    ''' EVENT HANDLERS '''
+    
     def on_mode_change(self, event=None):
-        # Handle mode change event
         new_mode = self.mode_var.get()
         if new_mode != self.current_mode:
             self.current_mode = new_mode
             self.current_mode_label.config(text=self.current_mode)
-            self.display_mode_parameters()
             self.current_parameters = self.current_json_data.get(self.current_mode, {})
             self.display_mode_parameters()
             messagebox.showinfo("Mode Changed", f"Switched to {self.current_mode} mode")
 
     def on_lead_change(self, event=None):
-        # Handle mode change event
         new_lead = self.lead_var.get()
         if new_lead != self.lead_type:
             self.lead_type = new_lead
@@ -427,13 +760,10 @@ class DCMMainInterface:
             messagebox.showinfo("Lead Changed", f"Switched to {self.lead_type} lead")
 
     def switch_parameter_set(self):
-        # Switch between Bradycardia and Temporary parameters
         new_type = "TEMP" if self.current_param_type == "BRADY" else "BRADY"
 
-        # confirm switch
         if not messagebox.askyesno("Switch Parameter Set",
-                                   f"Switch from {self.current_param_type} to {new_type} parameters?\nUnsaved changes will be lost!"
-        ):
+                                   f"Switch from {self.current_param_type} to {new_type} parameters?\nUnsaved changes will be lost!"):
             return
         
         self.save_parameters_silent()
@@ -449,14 +779,20 @@ class DCMMainInterface:
             self.current_json_data = self.temp_data
 
         self.current_set_label.config(text=self.current_param_type)
-        self.display_mode_parameters()
         self.current_parameters = self.current_json_data.get(self.current_mode, {})
         self.load_user_parameters()
         self.display_mode_parameters()
         messagebox.showinfo("Parameter Set Switched", f"Now editing {new_type} parameters.")
     
+    ''' VALIDATION '''
+    
     def validate_parameter(self, param_key, value):
-        # Validate a parameter value against its allowed range
+        # Activity Threshold dropdown
+        if param_key == "Activity Threshold":
+            if value in self.ACTIVITY_THRESHOLD_OPTIONS:
+                return True, ""
+            return False, f"Activity Threshold must be one of: {', '.join(self.ACTIVITY_THRESHOLD_OPTIONS)}"
+        
         try:
             num_value = float(value)
             min_val, max_val = self.PARAMETER_RANGES[param_key]
@@ -469,10 +805,8 @@ class DCMMainInterface:
             return False, f"{self.PARAMETER_LABELS[param_key][0]} must be a valid number"
     
     def validate_all_parameters(self):
-        # Validate all current parameter values
         errors = []
         
-        # First, validate ranges for all parameters
         for param_key, entry in self.parameter_entries.items():
             value = entry.get()
             is_valid, error_msg = self.validate_parameter(param_key, value)
@@ -480,10 +814,8 @@ class DCMMainInterface:
             if not is_valid:
                 errors.append(error_msg)
         
-        # If no range errors, check inter-parameter constraints
         if not errors:
             try:
-                # Check LRL vs URL constraint (only if both exist in current mode)
                 if 'Lower Rate Limit' in self.parameter_entries and 'Upper Rate Limit' in self.parameter_entries:
                     lrl = float(self.parameter_entries['Lower Rate Limit'].get())
                     url = float(self.parameter_entries['Upper Rate Limit'].get())
@@ -491,12 +823,11 @@ class DCMMainInterface:
                     if lrl > url:
                         errors.append("Lower Rate Limit cannot be greater than Upper Rate Limit")
             except ValueError:
-                pass  # Already caught by range validation
+                pass
         
         return errors
     
     def create_action_buttons(self, parent):
-        # Bottom action buttons
         button_frame = ttk.Frame(parent)
         button_frame.grid(row=4, column=0, columnspan=2, pady=(10, 0))
         
@@ -506,11 +837,10 @@ class DCMMainInterface:
         ttk.Button(button_frame, text="Logout", command=self.logout).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Back to Patient Selection", command=self.back_to_patient_selection).pack(side=tk.LEFT, padx=5)
     
-    # Device control methods
+    ''' DEVICE CONTROL METHODS '''
     
     def connect_device(self):
         """Connect to real pacemaker device via serial port"""
-        # Show port selection dialog
         ports = self.pacemaker_serial.list_ports()
         
         if not ports:
@@ -559,7 +889,6 @@ class DCMMainInterface:
                 self.telemetry_indicator.config(fg="green")
                 self.telemetry_text.config(text="OK")
                 
-                # Check for different device (Requirement 7)
                 if self.last_device and self.last_device != result:
                     self.device_warning.config(text="⚠ Different Device!")
                     self.root.after(5000, lambda: self.device_warning.config(text=""))
@@ -589,7 +918,6 @@ class DCMMainInterface:
         messagebox.showinfo("Disconnected", "Device disconnected")
     
     def simulate_telemetry_loss(self, reason):
-        # Simulate telemetry loss (Requirements 5, 6)
         if self.connection_status != "Connected":
             messagebox.showwarning("Warning", "No device connected")
             return
@@ -603,13 +931,11 @@ class DCMMainInterface:
             messagebox.showwarning("Telemetry Loss", "Electromagnetic interference detected!")
     
     def restore_telemetry(self):
-        # Restore telemetry connection
         if self.connection_status == "Connected":
             self.telemetry_indicator.config(fg="green")
             self.telemetry_text.config(text="OK")
     
     def simulate_different_device(self):
-        # Simulate detecting different device (Requirement 7)
         if self.connection_status != "Connected":
             messagebox.showwarning("Warning", "No device connected")
             return
@@ -625,10 +951,21 @@ class DCMMainInterface:
         self.root.after(5000, lambda: self.device_warning.config(text=""))
     
     def interrogate_device(self):
-        """Read parameters from connected pacemaker"""
+        """Read parameters from connected pacemaker with unit conversion"""
+
+        self.streaming_enabled = False
+        ok, data = self.pacemaker_serial.interrogate_device()
+        self.streaming_enabled = True
+
         if not self.pacemaker_serial.connected:
             messagebox.showwarning("Warning", "Please connect to a device first")
             return
+        
+        
+        # Prevent multiple rapid calls
+        if self._interrogating_in_progress:
+            return
+        self._interrogating_in_progress = True
         
         # Show progress
         progress = tk.Toplevel(self.root)
@@ -643,83 +980,129 @@ class DCMMainInterface:
         progress_bar.start()
         progress.update()
         
-        success, result = self.pacemaker_serial.interrogate_device()
-        
-        progress_bar.stop()
-        progress.destroy()
-        
-        if success:
-            # Update GUI with retrieved parameters
-            for param_key, value in result.items():
-                if param_key in self.parameter_entries:
-                    self.parameter_entries[param_key].delete(0, tk.END)
-                    self.parameter_entries[param_key].insert(0, str(value))
-                    # Also update internal data
-                    self.current_parameters[param_key] = value
-                    self.current_json_data[self.current_mode][param_key] = value
+        try:
+            success, result = self.pacemaker_serial.interrogate_device()
             
-            messagebox.showinfo("Success", 
-                            f"Device parameters retrieved successfully for {self.current_mode} mode")
-        else:
-            messagebox.showerror("Error", f"Failed to interrogate device:\n{result}")
+            progress_bar.stop()
+            progress.destroy()
+            
+            if success:
+                # Map serial parameter names back to GUI names with unit conversion
+                for serial_key, serial_value in result.items():
+                    gui_key = self.SERIAL_TO_GUI_MAPPING.get(serial_key)
+                    if gui_key and gui_key in self.parameter_entries:
+                        # Convert serial value to GUI units
+                        gui_value = self._convert_serial_to_gui(serial_key, serial_value)
+                        
+                        # Update GUI entry
+                        self.parameter_entries[gui_key].delete(0, tk.END)
+                        self.parameter_entries[gui_key].insert(0, str(gui_value))
+                        
+                        # Update internal data
+                        self.current_parameters[gui_key] = gui_value
+                        self.current_json_data[self.current_mode][gui_key] = gui_value
+                
+                messagebox.showinfo("Success", 
+                                f"Device parameters retrieved successfully for {self.current_mode} mode")
+            else:
+                messagebox.showerror("Error", f"Failed to interrogate device:\n{result}")
+        finally:
+            self._interrogating_in_progress = False
     
     def program_parameters(self):
-        """Program parameters to connected pacemaker"""
+        """Program parameters to connected pacemaker with unit conversion"""
+
+        self.streaming_enabled = False
+        self.streaming_enabled = True
+
         if not self.pacemaker_serial.connected:
             messagebox.showwarning("Warning", "Please connect to a device first")
             return
         
-        # Validate parameters before programming
-        errors = self.validate_all_parameters()
-        if errors:
-            messagebox.showerror("Validation Error",
-                            "Cannot program parameters:\n\n" + "\n".join(errors))
+        # Prevent multiple rapid calls
+        if self._programming_in_progress:
             return
+        self._programming_in_progress = True
         
-        if not messagebox.askyesno("Program Device",
-                                f"Program these {self.current_mode} parameters to the connected device?\n\n"
-                                "This will update the pacemaker settings."):
-            return
-        
-        # Collect parameters
-        parameters = {}
-        for key, entry in self.parameter_entries.items():
-            try:
-                parameters[key] = float(entry.get())
-            except ValueError:
-                messagebox.showerror("Error", f"Invalid value for {key}")
+        try:
+            # Validate parameters before programming
+            errors = self.validate_all_parameters()
+            if errors:
+                messagebox.showerror("Validation Error",
+                                "Cannot program parameters:\n\n" + "\n".join(errors))
                 return
-        
-        # Show progress
-        progress = tk.Toplevel(self.root)
-        progress.title("Programming Device")
-        progress.geometry("300x100")
-        progress.transient(self.root)
-        progress.grab_set()
-        ttk.Label(progress, text="Programming parameters to device...", 
-                font=("Arial", 10)).pack(pady=20)
-        progress_bar = ttk.Progressbar(progress, mode='indeterminate')
-        progress_bar.pack(pady=10, padx=20, fill=tk.X)
-        progress_bar.start()
-        progress.update()
-        
-        # Send to device
-        success, message = self.pacemaker_serial.program_parameters(self.current_mode, parameters)
-        
-        progress_bar.stop()
-        progress.destroy()
-        
-        if success:
-            time.sleep(0.3)
-            messagebox.showinfo("Success",
-                            f"{message}\n\nDevice: {self.connected_device}\nMode: {self.current_mode}")
-            # Auto-save to DCM after successful programming
-            self.save_parameters_silent()
-        else:
-            messagebox.showerror("Programming Failed", message)
+            
+            if not messagebox.askyesno("Program Device",
+                                    f"Program these {self.current_mode} parameters to the connected device?\n\n"
+                                    "This will update the pacemaker settings."):
+                return
+            
+            # Start with default serial parameters
+            serial_params = self._get_serial_defaults()
+            
+            # Override with actual GUI values, applying unit conversion
+            for gui_key, entry in self.parameter_entries.items():
+                try:
+                    # Activity Threshold is a string dropdown, not a float
+                    if gui_key == "Activity Threshold":
+                        gui_value = entry.get()  # Returns string like "Med"
+                    else:
+                        gui_value = float(entry.get())
+                    
+                    serial_key = self.GUI_TO_SERIAL_MAPPING.get(gui_key, gui_key)
+                    
+                    # Convert GUI value to serial units
+                    serial_value = self._convert_gui_to_serial(gui_key, gui_value)
+                    serial_params[serial_key] = serial_value
+                    
+                except ValueError:
+                    messagebox.showerror("Error", f"Invalid value for {gui_key}")
+                    return
+            
+            # Debug: Print conversion results (only once)
+            print(f"\n=== Programming {self.current_mode} ===")
+            for gui_key, entry in self.parameter_entries.items():
+                if gui_key == "Activity Threshold":
+                    gui_val = entry.get()
+                else:
+                    gui_val = float(entry.get())
+                serial_key = self.GUI_TO_SERIAL_MAPPING.get(gui_key, gui_key)
+                serial_val = serial_params.get(serial_key)
+                print(f"  {gui_key}: {gui_val} (GUI) -> {serial_key}: {serial_val} (Serial)")
+            
+            # Show progress
+            progress = tk.Toplevel(self.root)
+            progress.title("Programming Device")
+            progress.geometry("300x100")
+            progress.transient(self.root)
+            progress.grab_set()
+            ttk.Label(progress, text="Programming parameters to device...", 
+                    font=("Arial", 10)).pack(pady=20)
+            progress_bar = ttk.Progressbar(progress, mode='indeterminate')
+            progress_bar.pack(pady=10, padx=20, fill=tk.X)
+            progress_bar.start()
+            progress.update()
+            
+            # Send to device
+            success, message = self.pacemaker_serial.program_parameters(self.current_mode, serial_params)
+            
+            progress_bar.stop()
+            progress.destroy()
+            
+            if success:
+                time.sleep(0.3)
+                messagebox.showinfo("Success",
+                                f"{message}\n\nDevice: {self.connected_device}\nMode: {self.current_mode}")
+                # Auto-save to DCM after successful programming
+                self.save_parameters_silent()
+            else:
+                messagebox.showerror("Programming Failed", message)
+        finally:
+            self._programming_in_progress = False
+    
+    ''' PARAMETER MANAGEMENT '''
     
     def reset_to_nominal(self):
-        # Reset parameters to nominal values for current mode
         if messagebox.askyesno("Reset to Nominal", 
                               f"Reset all {self.current_mode} parameters to nominal values?"):
             for param_key in self.parameter_entries.keys():
@@ -729,7 +1112,6 @@ class DCMMainInterface:
             messagebox.showinfo("Reset", f"Parameters reset to nominal values for {self.current_mode} mode")
     
     def revert_changes(self):
-        # Revert parameters to last saved values
         if messagebox.askyesno("Revert Changes", "Discard all unsaved changes?"):
             for param_key, entry in self.parameter_entries.items():
                 saved_value = self.current_parameters.get(param_key, self.get_nominal_value(param_key))
@@ -738,7 +1120,6 @@ class DCMMainInterface:
             messagebox.showinfo("Reverted", "Parameters restored to last saved values")
     
     def save_parameters(self):
-        # Save parameters to DCM local storage
         errors = self.validate_all_parameters()
         
         if errors:
@@ -746,10 +1127,13 @@ class DCMMainInterface:
                                "Cannot save parameters:\n\n" + "\n".join(errors))
             return
 
-        # Update current parameters
         for key, entry in self.parameter_entries.items():
             try:
-                value = float(entry.get())
+                # Activity Threshold is a string, not a float
+                if key == "Activity Threshold":
+                    value = entry.get()  # String like "Med"
+                else:
+                    value = float(entry.get())
                 self.current_parameters[key] = value
                 self.current_json_data[self.current_mode][key] = value
                 set_parameter(self.current_dcm_path, self.current_mode, key, value)
@@ -757,16 +1141,18 @@ class DCMMainInterface:
                 messagebox.showerror("Error", f"Invalid value for {key}")
                 return
 
-        # Save to file
         with open(self.json_path, 'w') as f:
-            json.dump(self.brady_data, f, indent=4)
+            json.dump(self.current_json_data, f, indent=4)
         messagebox.showinfo("Saved", f"Parameters saved to DCM storage for user: {self.username}")
     
     def save_parameters_silent(self):
-        # Save parameters without showing success message (used after programming)     
         for key, entry in self.parameter_entries.items():
             try:
-                value = float(entry.get())
+                # Activity Threshold is a string, not a float
+                if key == "Activity Threshold":
+                    value = entry.get()  # String like "Med"
+                else:
+                    value = float(entry.get())
                 self.current_parameters[key] = value
                 self.current_json_data[self.current_mode][key] = value
                 set_parameter(self.current_dcm_path, self.current_mode, key, value)
@@ -774,13 +1160,15 @@ class DCMMainInterface:
                 return
 
         with open(self.json_path, 'w') as f:
-            json.dump(self.brady_data, f, indent=4)
+            json.dump(self.current_json_data, f, indent=4)
+    
+    # =============================================================
+    # SESSION MANAGEMENT
+    # =============================================================
     
     def logout(self):
-        # Logout and return to login
         if messagebox.askyesno("Logout", "Logout and return to login screen?"):
             self.save_parameters_silent()
-            # Remove JSON files
             for path in [self.brady_json_path, self.temp_json_path]:
                 try:
                     if os.path.exists(path):
@@ -788,16 +1176,13 @@ class DCMMainInterface:
                 except Exception as e:
                     print(f"Could not remove path: {e}")
 
-            # Restart login window
             self.root.destroy()
             import gui.login
             gui.login.main()
 
     def back_to_patient_selection(self):
-        # Return to the patient selection window.
         if messagebox.askyesno("Return", "Return to patient selection? Unsaved changes will be lost."):
             self.save_parameters_silent()
-            # Remove JSON files
             for path in [self.brady_json_path, self.temp_json_path]:
                 try:
                     if os.path.exists(path):
@@ -811,12 +1196,8 @@ class DCMMainInterface:
             PatientSelectApp(main_root, self.username)
             main_root.mainloop()
     
-    # Data persistence
-    
     def load_user_parameters(self): 
-        # Update title and status labels
         self.root.title(f"PACEMAKER DCM - {self.current_param_type} - User: {self.username}")
-        # Load user-specific parameters 
         params = {}
 
         for param, entry in self.parameter_entries.items():
@@ -826,11 +1207,3 @@ class DCMMainInterface:
             params[param] = entry_value
 
         return params
-    
-    # def save_user_parameters(self, param_file):
-    #     # Save user-specific parameters
-    #     # Create data directory if it doesn't exist
-    #     os.makedirs(param_file, exist_ok=True)
-        
-    #     with open(param_file, 'w') as f:
-    #         json.dump(self.current_parameters, f, indent=2)
